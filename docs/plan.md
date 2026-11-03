@@ -94,7 +94,7 @@ Missing from mq-emu, to bind before the monk (milestone 1):
 
 | Gap | Today | Needed |
 |---|---|---|
-| Combat abilities and discs | only `${Me.CombatAbilityReady}`, `${Me.ActiveDisc}` and `/disc` | list of known combat abilities, ready check and timer, activate, active disc |
+| Combat abilities and discs | done in mq-emu 0.1.5 (`combat_abilities`, `use_combat_ability`, `active_disc`); names include the rank, so INI lists will match without it | |
 | Triggering an ability | `/doability` | `Skill::activate()` |
 | Activating an AA | `/alt activate N` | `AltAbility::activate()` |
 | Aggro | `${Me.PctAggro}`, `${Me.TargetOfTarget}` | my aggro %, aggro holder or target of target |
