@@ -78,8 +78,48 @@ Sent to every bot with `/pc` through Posse.
 
 - A `${Bots}` TLO, until something needs it.
 - A HUD or ImGui panels; a driver HUD comes later.
-- Casters, cast-result tracking in the bot, raids, pulling, MQ2Nav.
+- Casters other than the shaman, raids, pulling, MQ2Nav.
 - A static camp (`deploy` / `packup`); the camp is the MA until then.
+
+## Shaman
+
+Started before monk milestone 5. Long-duration buffs are left out for now: telling whether someone else's better buff is already on a target is its own problem.
+
+The tank is the group member with the `MainTank` role, or the MA if no one has it.
+
+No melee by default: the shaman never sticks to a mob or turns on attack. It stays back where it is, following the driver out of combat, and only casts. An INI switch for melee can come later.
+
+Archetypes:
+
+| Archetype | Use |
+|---|---|
+| `heal` | Single-target heal |
+| `heal.hot` | Single-target heal over time, kept on the tank |
+| `heal.group` | Group heal over time |
+| `buff.melee` | Short melee buffs (Spirit of the Panther), on melee members and pets in combat |
+| `debuff.1`, `debuff.2`... | One debuff line each (slow, malo, cripple...), each best first; kept up in number order |
+| `dot.1`, `dot.2`... | One DoT line each, the same way |
+| `nuke` | Direct damage |
+
+Each pulse the shaman does the first of these that applies:
+
+1. **Emergency heal:** the tank below `HealAt`, or anyone else below `EmergencyAt`: `heal` on the lowest, the tank winning ties. A cast that isn't a heal is stopped for it.
+2. **Group HoT:** `GroupHotCount` (default 2) or more members below `GroupHotAt`, and the group HoT isn't on them: `heal.group`.
+3. **Tank HoT:** while the tank is fighting, keep `heal.hot` on it.
+4. **Melee buffs:** in combat, `buff.melee` on each melee-class member (WAR, PAL, SHD, MNK, ROG, BER, RNG, BST, BRD) and each member's pet, the tank first, when it's missing or under `RebuffAt` seconds left.
+5. **Debuffs, then DoTs:** on the MA's target while engaged, each line that isn't on it from this shaman, while mana is above `DpsManaMin` and the mob is above `DotStopAt` HP%. After `MaxResists` resists in a row, a line is given up on that mob (slow-immune mobs).
+6. **Nuke:** while mana is above `NukeManaMin`.
+
+How it sees things:
+
+- **Members' buffs:** Posse already publishes each member's buffs and songs with time left. A buff that just landed shows up a pulse or so later, so after a cast lands the shaman holds that line on that target briefly instead of casting it twice.
+- **Pets' buffs:** a new Posse field. Each owner publishes its pet's buffs from its pet window (mq-emu `pet_buffs`, already bound).
+- **The mob's debuffs and DoTs:** `target_buffs` with each buff's caster, once `target_buffs_populated` says they've arrived.
+- **Casting on a member:** target it, cast, then go back to the MA's target.
+
+Gems: a `[Gems]` section maps gem numbers to archetypes (`1=heal`, `2=heal.hot`...). Out of combat, on load and on `/bots reload`, the shaman memorizes the best known spell of each archetype into its gem, so one INI works at every level.
+
+Later: long-duration buffs, canni and medding, the shaman's own pet.
 
 ## MVP milestones
 
@@ -89,6 +129,15 @@ Sent to every bot with `/pc` through Posse.
 4. ~~Monk: assist, stick, attack, abilities and regular discs.~~ Done, and tried in game. `bots-core` decides what to engage (`engage.rs`) and what the monk uses (`class/monk.rs`, against a `Game` trait the plugin implements), so both are tested off-game. The camp radius is measured from the bot, so a mob being pulled waits until it's brought in. mq-emu 0.1.7 added what this needed: `set_auto_attack` and `melee_range` (`${Target.MaxRangeTo}`, so abilities wait until in range). posse-core now holds MQ2Posse's settings names and `auto_join_posse`, so the bots find the same posse Posse joins. Disengaging on `/bots backoff` came with it, so milestone 6 leaves following and the group test.
 5. Burn phase, Mend, Feign Death (including feigning again when knocked out of it while FD still applies).
 6. Follow and backoff. Test in a group of 4.
+
+Shaman milestones, started before monk milestone 5:
+
+- S1. mq-emu: the safe cast API (see API gaps), then release. Posse: pets' buffs.
+- S2. Casting in `bots-core` (a `Cast` action, gem and cast state in `Game`) and memorizing `[Gems]` out of combat.
+- S3. Heals: emergency heals, group HoT, tank HoT, stopping a non-heal cast for a heal.
+- S4. Melee buffs on members and pets.
+- S5. Debuffs, DoTs and nukes, with mana floors and giving up after resists.
+- S6. Try it in game with the group.
 
 ## API gaps
 
@@ -107,6 +156,17 @@ Missing from mq-emu, to bind before the monk (milestone 1):
 | Small helpers | done in mq-emu 0.1.6 (`endurance_percent`, `Spawn::is_standing`) | |
 | Is a plugin loaded | done in mq-emu 0.1.6 (`is_plugin_loaded`, by any name `GetPlugin` takes) | |
 
-Later, for casters: cast-result tracking (mq-emu has chat events and `Spawn::casting` polling, but no API that reports a cast's outcome).
+For the shaman (S1): a safe cast API in mq-emu. mq-emu has chat events and `Spawn::casting` polling, but nothing that reports how a cast ended; MacroQuest itself has none either, and MQ2Cast reads outcomes from chat messages. It goes into mq-emu, not a separate plugin: a plugin like MQ2Cast is driven by commands and read back through a TLO string, the lag and parsing the bots avoid by reading Posse directly, and only the bot casts for its character, so a shared queue isn't needed.
+
+The split: mq-emu does how to cast; the bots decide what and when (thresholds, priorities, resist counting, `[Gems]`).
+
+- `mq.cast(spell, target)` is an async task that always ends with a result: landed, resisted, interrupted, fizzled, out of range, no line of sight, not enough mana, not memorized, or timed out.
+- It checks first, without touching the game: spell known and in a gem, gem ready, mana, target exists, is alive and in range; not already casting, stunned or feigning. A failed check returns its reason.
+- It does the routine steps: stands if sitting, targets the spell's target (optionally going back to the previous one), casts from the gem.
+- It always finishes: it tracks the cast through the casting state and the chat messages (fizzle, interrupt, resist, can't see target), with a timeout so a lost message can't hang a bot.
+- Cancelling the task stops the cast, which is what an emergency heal needs.
+- Memorizing gets the same shape: a task that ends once the spell is in its gem and ready.
+
+Before designing the signature: check how mq-emu's chat events and async tasks fit together, so a cast task can wait on chat messages without the plugin wiring it up, and which messages MQ2Cast matches for each outcome. Everything else the shaman needs is bound: casting from a gem, gem readiness, memorizing, stopping a cast, mana, target and pet buffs with casters, `knows_spell` and `spell_level`.
 
 Posse needed one new field for the monk, `target_hp_percent` (layout 5): a bot's client had a pulled mob at 95% while the MA's showed it higher, so the MA's view is used. Its live status already had `target_id`, `hp_percent`, position, and `COMBAT` and `FEIGNING` flags; the bot no longer reads the MA's target's HP% from the spawn locally. The ready flag comes later. The bots read it with `posse_shm::Mapping::open` and `posse_core::Roster` (`refresh`, `read` by name), linked as path dependencies, since both crates are `publish = false`. The `COMBAT` flag is auto attack (`${Me.Combat}`), published from mq-emu's `in_combat`, not the combat state; if a bot needs a member's combat state, that's a new Posse field.
