@@ -1,6 +1,6 @@
-//! The shaman: stays back and casts. Heals (in a fight or out), keeps melee
-//! buffs up in a fight and keeps its spells memorized so far; debuffs, DoTs
-//! and nukes come next.
+//! The shaman: stays back and casts. Heals and keeps melee buffs up (in a
+//! fight or out) and keeps its spells memorized so far; debuffs, DoTs and
+//! nukes come next.
 
 use super::{Action, Class, Game, Member, Spells, best_memorized, melee_class};
 use crate::{Config, State};
@@ -66,8 +66,12 @@ impl Class for Shaman {
         (game.buff_left(tank.id, hot).is_none() && game.spell_ready(hot)).then(|| Action::Cast { spell: hot.to_owned(), target: Some(tank.id) })
     }
 
-    fn rest(&mut self, _config: &Config, _state: &State, _game: &dyn Game) -> Option<Action> {
-        None
+    /// Melee buffs, kept up between fights too.
+    fn rest(&mut self, config: &Config, _state: &State, game: &dyn Game) -> Option<Action> {
+        if game.casting() {
+            return None;
+        }
+        melee_buff(config, game)
     }
 
     /// Melee buffs; debuffs, DoTs and nukes come next.
@@ -291,5 +295,17 @@ mod tests {
         assert_eq!(fight(&game), None, "not ready");
         game.gems.retain(|(_, spell)| *spell != PANTHER);
         assert_eq!(fight(&game), None, "not memorized");
+    }
+
+    #[test]
+    fn melee_buffs_between_fights_too() {
+        let mut game = group();
+        let rest = |game: &FakeGame| Shaman.rest(&config(), &State::new(&Config::default()), game);
+        assert_eq!(rest(&game), cast(PANTHER, Some(TANK)));
+        game.member_buffs.extend([(TANK, PANTHER), (ROGUE, PANTHER)]);
+        assert_eq!(rest(&game), None, "on everyone");
+        game.member_buffs.clear();
+        game.casting = true;
+        assert_eq!(rest(&game), None, "a cast is under way");
     }
 }

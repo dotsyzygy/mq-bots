@@ -36,7 +36,7 @@ Listed most important first. The shaman keeps memorized what it uses of each, on
 | `heal` | Single-target heal | Cast |
 | `heal.hot` | Single-target heal over time, kept on the tank | Cast |
 | `heal.group.hot` | Group heal over time | Cast |
-| `buff.melee` | Short melee buffs (Spirit of the Panther), in a fight, on melee-class members (the tank first), then their pets, when missing or under `RebuffAt` seconds left | Cast |
+| `buff.melee` | Short melee buffs (Spirit of the Panther), in a fight and between fights (not while moving), on melee-class members (the tank first), then their pets, when missing or under `RebuffAt` seconds left | Cast |
 | `debuff` | Slows, malos, cripples..., *each kind*, kept on the mob in list order | Memorized; cast from S1 |
 | `dot` | DoTs, *each kind* (poison, disease), the same way | Memorized; cast from S1 |
 | `nuke` | Direct damage | Memorized; cast from S1 |

@@ -184,9 +184,10 @@ impl Bots {
         self.act(mq, &action);
     }
 
-    /// Out of combat: gems, buffs and auras, when nothing is in the way.
+    /// Out of combat: gems, buffs and auras, when nothing is in the way
+    /// (moving included: following, or by hand).
     fn rest(&mut self, mq: &Mq<Self>, me: &Spawn<'_>) {
-        if self.state.mode == Mode::Off || me.is_feigning() || me.is_stunned() || me.casting().is_some() || self.fight.task.is_some() {
+        if self.state.mode == Mode::Off || me.is_feigning() || me.is_stunned() || me.is_moving() || me.casting().is_some() || self.fight.task.is_some() {
             return;
         }
         if mq.is_auto_attacking() || mq.combat_state() == Some(CombatState::Combat) {
@@ -195,7 +196,8 @@ impl Bots {
         if self.fight.next_action.is_some_and(|at| Instant::now() < at) {
             return;
         }
-        let seeing = Seeing::new(mq, me, &self.fight, Vec::new());
+        let group = self.group(mq, me);
+        let seeing = Seeing::new(mq, me, &self.fight, group);
         let mut action = None;
         let mut left_out = None;
         if self.state.memorize
