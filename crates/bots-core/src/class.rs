@@ -44,6 +44,10 @@ pub trait Game {
     fn in_melee_range(&self) -> bool;
     /// A spell in your book that you're high enough level to cast.
     fn spell_known(&self, name: &str) -> bool;
+    /// A spell's kind, as the game's spell data says (its subcategory: Slow,
+    /// Poison...); `None` if it isn't in your book or has none. Two spells
+    /// of one kind are ranks of one line: two slows don't both go on a mob.
+    fn spell_kind(&self, name: &str) -> Option<i32>;
     /// The spell gems you have (8 to 12 in RoF2, with level and AAs).
     fn gem_count(&self) -> usize;
     /// The gem a spell is memorized in, numbered from 1.
@@ -56,13 +60,12 @@ pub trait Game {
 }
 
 pub trait Class {
-    /// The INI sections it reads, for saying which others it doesn't; `#`
-    /// stands for a number (`dot.#` for `dot.1`, `dot.2`...).
+    /// The INI sections it reads, for saying which others it doesn't.
     fn archetypes(&self) -> &'static [&'static str];
 
     /// The archetypes it casts spells from, most important first, to keep
-    /// memorized (see [`plan_gems`]). `#` as in [`archetypes`](Class::archetypes).
-    fn spell_lines(&self) -> &'static [&'static str] {
+    /// memorized (see [`plan_gems`]).
+    fn spells(&self) -> &'static [Spells] {
         &[]
     }
 
@@ -87,29 +90,67 @@ pub fn for_class(name: &str) -> Option<Box<dyn Class>> {
     }
 }
 
+/// An archetype a class casts from, and how many of its spells it uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spells {
+    /// The best one you know (a heal).
+    Best(&'static str),
+    /// The best one you know of each kind ([`Game::spell_kind`]), in list
+    /// order: one slow, one malo, one cripple...
+    EachKind(&'static str),
+}
+
+impl Spells {
+    pub fn archetype(self) -> &'static str {
+        match self {
+            Spells::Best(archetype) | Spells::EachKind(archetype) => archetype,
+        }
+    }
+}
+
+/// The spells of `spells` the class uses, by the INI's names, in list order:
+/// known, not in `skip` (given up on, or used by another archetype), and for
+/// [`Spells::EachKind`], not of a kind an earlier one is.
+pub fn spells_used<'a>(config: &'a Config, spells: Spells, game: &dyn Game, skip: &[&str]) -> Vec<&'a str> {
+    let mut used: Vec<&str> = Vec::new();
+    let mut kinds = Vec::new();
+    for name in config.archetype(spells.archetype()) {
+        if skip.contains(&name.as_str()) || used.contains(&name.as_str()) || !game.spell_known(name) {
+            continue;
+        }
+        match (spells, game.spell_kind(name)) {
+            (Spells::Best(_), _) => return vec![name],
+            (Spells::EachKind(_), Some(kind)) if kinds.contains(&kind) => continue,
+            (Spells::EachKind(_), kind) => kinds.extend(kind),
+        }
+        used.push(name);
+    }
+    used
+}
+
 /// Which spells to keep memorized, and the next one to memorize.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GemPlan {
     /// Memorize this next, if anything.
     pub next: Option<Action>,
-    /// The archetypes with a spell you know that the gems have no room for,
-    /// most important first.
+    /// The spells the gems have no room for, most important first, as
+    /// "spell (archetype)".
     pub left_out: Vec<String>,
-    /// The archetypes with a spell you know, room or not.
+    /// How many spells the class uses, room or not.
     pub wanted: usize,
 }
 
-/// Keeps the best spell you know of each of `lines` (a class's
-/// [`spell_lines`](Class::spell_lines)) memorized, the most important first
-/// when there are more than gems. A spell already in a gem stays there; the
-/// others go into the gems holding nothing wanted, lowest first. Spells in
-/// `given_up` (that wouldn't memorize) are taken as unknown.
-pub fn plan_gems(config: &Config, lines: &[&str], game: &dyn Game, given_up: &[String]) -> GemPlan {
+/// Keeps the spells a class uses ([`spells_used`] of each of `spells`)
+/// memorized, the most important first when there are more than gems. A
+/// spell already in a gem stays there; the others go into the gems holding
+/// nothing wanted, lowest first. Spells in `given_up` (that wouldn't
+/// memorize) are taken as unknown.
+pub fn plan_gems(config: &Config, spells: &[Spells], game: &dyn Game, given_up: &[String]) -> GemPlan {
     let mut wanted: Vec<(&str, &str)> = Vec::new();
-    for archetype in lines.iter().flat_map(|line| config.archetypes_like(line)) {
-        let usable = |name: &&String| !wanted.iter().any(|(_, spell)| spell == name) && !given_up.contains(name) && game.spell_known(name);
-        let best = config.archetype(archetype).iter().find(usable);
-        wanted.extend(best.map(|spell| (archetype, spell.as_str())));
+    for &archetype in spells {
+        let skip: Vec<&str> = given_up.iter().map(String::as_str).chain(wanted.iter().map(|(_, spell)| *spell)).collect();
+        let used = spells_used(config, archetype, game, &skip);
+        wanted.extend(used.into_iter().map(|spell| (archetype.archetype(), spell)));
     }
     let room = game.gem_count().min(wanted.len());
     let kept = &wanted[..room];
@@ -118,7 +159,7 @@ pub fn plan_gems(config: &Config, lines: &[&str], game: &dyn Game, given_up: &[S
     let missing = kept.iter().find(|(_, spell)| game.spell_gem(spell).is_none());
     GemPlan {
         next: missing.zip(free.next()).map(|((_, spell), gem)| Action::Memorize { gem, spell: (*spell).to_owned() }),
-        left_out: wanted[room..].iter().map(|(archetype, _)| (*archetype).to_owned()).collect(),
+        left_out: wanted[room..].iter().map(|(archetype, spell)| format!("{spell} ({archetype})")).collect(),
         wanted: wanted.len(),
     }
 }
@@ -166,6 +207,8 @@ pub(crate) struct FakeGame {
     pub buffs: Vec<(&'static str, Duration)>,
     /// Spells in your book you can cast.
     pub book: Vec<&'static str>,
+    /// Spells' kinds; others have none.
+    pub kinds: Vec<(&'static str, i32)>,
     /// Memorized spells by gem.
     pub gems: Vec<(usize, &'static str)>,
     pub gem_count: usize,
@@ -194,6 +237,9 @@ impl Game for FakeGame {
     }
     fn spell_known(&self, name: &str) -> bool {
         self.book.contains(&name)
+    }
+    fn spell_kind(&self, name: &str) -> Option<i32> {
+        self.kinds.iter().find(|(spell, _)| *spell == name).map(|(_, kind)| *kind)
     }
     fn gem_count(&self) -> usize {
         self.gem_count
@@ -238,66 +284,91 @@ mod tests {
         assert!(for_class("Paladin").is_none());
     }
 
+    const SLOW: i32 = 88;
+    const MALO: i32 = 81;
+    const POISON: i32 = 1;
+    const DISEASE: i32 = 2;
+
     fn spells_config() -> Config {
         let numbered = |names: &[&str]| names.iter().enumerate().map(|(i, name)| ((i + 1).to_string(), name.to_string())).collect();
         let sections = vec![
             ("heal".to_owned(), numbered(&["Superior Healing", "Greater Healing", "Healing"])),
-            ("dot.2".to_owned(), numbered(&["Tainted Breath"])),
-            ("dot.10".to_owned(), numbered(&["Envenomed Breath"])),
-            ("dot.1".to_owned(), numbered(&["Sicken"])),
+            ("debuff".to_owned(), numbered(&["Turgur's Insects", "Togor's Insects", "Malosi", "Malaise", "Cripple"])),
+            ("dot".to_owned(), numbered(&["Envenomed Bolt", "Envenomed Breath", "Tainted Breath", "Sicken"])),
             ("nuke".to_owned(), numbered(&["Frost Strike"])),
         ];
         Config::from_layers(&[crate::Layer { name: "Shaman.ini".into(), sections }]).0
     }
 
-    const LINES: &[&str] = &["heal", "dot.#", "nuke"];
-    const BOOK: &[&str] = &["Healing", "Greater Healing", "Sicken", "Tainted Breath", "Envenomed Breath", "Frost Strike"];
+    const SPELLS: &[Spells] = &[Spells::Best("heal"), Spells::EachKind("debuff"), Spells::EachKind("dot"), Spells::Best("nuke")];
+
+    /// A level 40 shaman, without Turgur's Insects, Envenomed Bolt or Cripple.
+    fn shaman() -> FakeGame {
+        FakeGame {
+            book: vec!["Healing", "Greater Healing", "Togor's Insects", "Malosi", "Malaise", "Envenomed Breath", "Tainted Breath", "Sicken", "Frost Strike"],
+            kinds: vec![("Togor's Insects", SLOW), ("Malosi", MALO), ("Malaise", MALO), ("Envenomed Breath", POISON), ("Tainted Breath", POISON), ("Sicken", DISEASE)],
+            gem_count: 8,
+            ..FakeGame::default()
+        }
+    }
 
     fn memorize(gem: usize, spell: &str) -> Option<Action> {
         Some(Action::Memorize { gem, spell: spell.into() })
     }
 
     #[test]
-    fn memorizes_each_lines_best_known_spell_in_priority_order() {
+    fn uses_the_best_known_spell_or_the_best_of_each_kind() {
         let config = spells_config();
-        let mut game = FakeGame { book: BOOK.to_vec(), gem_count: 8, ..FakeGame::default() };
-        let plan = |game: &FakeGame| plan_gems(&config, LINES, game, &[]);
-        assert_eq!(plan(&game), GemPlan { next: memorize(1, "Greater Healing"), left_out: vec![], wanted: 5 });
+        let game = shaman();
+        assert_eq!(spells_used(&config, Spells::Best("heal"), &game, &[]), ["Greater Healing"]);
+        assert_eq!(spells_used(&config, Spells::EachKind("debuff"), &game, &[]), ["Togor's Insects", "Malosi"], "one slow, one malo");
+        assert_eq!(spells_used(&config, Spells::EachKind("dot"), &game, &[]), ["Envenomed Breath", "Sicken"], "one poison, one disease");
+        assert_eq!(spells_used(&config, Spells::EachKind("dot"), &game, &["Envenomed Breath"]), ["Tainted Breath", "Sicken"]);
+        let game = FakeGame { book: [game.book.as_slice(), &["Cripple"]].concat(), ..game };
+        assert_eq!(spells_used(&config, Spells::EachKind("debuff"), &game, &[]), ["Togor's Insects", "Malosi", "Cripple"], "a spell with no kind is its own");
+        assert!(spells_used(&config, Spells::Best("buff.melee"), &game, &[]).is_empty());
+    }
+
+    #[test]
+    fn memorizes_what_the_class_uses_in_priority_order() {
+        let config = spells_config();
+        let mut game = shaman();
+        let plan = |game: &FakeGame| plan_gems(&config, SPELLS, game, &[]);
+        assert_eq!(plan(&game), GemPlan { next: memorize(1, "Greater Healing"), left_out: vec![], wanted: 6 });
         game.gems = vec![(1, "Greater Healing")];
-        assert_eq!(plan(&game).next, memorize(2, "Sicken"), "dot.1, dot.2, dot.10 by number");
-        game.gems = vec![(1, "Greater Healing"), (2, "Sicken"), (3, "Tainted Breath")];
-        assert_eq!(plan(&game).next, memorize(4, "Envenomed Breath"));
-        game.gems.extend([(4, "Envenomed Breath"), (5, "Frost Strike")]);
+        assert_eq!(plan(&game).next, memorize(2, "Togor's Insects"));
+        game.gems = vec![(1, "Greater Healing"), (2, "Togor's Insects"), (3, "Malosi"), (4, "Envenomed Breath"), (5, "Sicken")];
+        assert_eq!(plan(&game).next, memorize(6, "Frost Strike"));
+        game.gems.push((6, "Frost Strike"));
         assert_eq!(plan(&game).next, None, "all in");
     }
 
     #[test]
     fn leaves_memorized_spells_where_they_are() {
         let config = spells_config();
-        let game = FakeGame { book: BOOK.to_vec(), gem_count: 8, gems: vec![(1, "Gate"), (2, "Frost Strike"), (3, "Healing"), (4, "Greater Healing")], ..FakeGame::default() };
-        assert_eq!(plan_gems(&config, LINES, &game, &[]).next, memorize(1, "Sicken"), "gem 1 holds nothing wanted; 2 and 4 stay");
-        let game = FakeGame { book: [BOOK, &["Superior Healing"]].concat(), gems: vec![(1, "Greater Healing"), (2, "Sicken")], ..game };
-        assert_eq!(plan_gems(&config, LINES, &game, &[]).next, memorize(1, "Superior Healing"), "a better spell replaces the one it outranks");
+        let game = FakeGame { gems: vec![(1, "Gate"), (2, "Frost Strike"), (3, "Healing"), (4, "Greater Healing")], ..shaman() };
+        assert_eq!(plan_gems(&config, SPELLS, &game, &[]).next, memorize(1, "Togor's Insects"), "gem 1 holds nothing wanted; 2 and 4 stay");
+        let game = FakeGame { book: [game.book.as_slice(), &["Superior Healing"]].concat(), gems: vec![(1, "Greater Healing"), (2, "Togor's Insects")], ..game };
+        assert_eq!(plan_gems(&config, SPELLS, &game, &[]).next, memorize(1, "Superior Healing"), "a better spell replaces the one it outranks");
     }
 
     #[test]
-    fn says_which_lines_the_gems_have_no_room_for() {
+    fn says_which_spells_the_gems_have_no_room_for() {
         let config = spells_config();
-        let game = FakeGame { book: BOOK.to_vec(), gem_count: 3, gems: vec![(1, "Greater Healing"), (2, "Sicken"), (3, "Tainted Breath")], ..FakeGame::default() };
-        assert_eq!(plan_gems(&config, LINES, &game, &[]), GemPlan { next: None, left_out: vec!["dot.10".into(), "nuke".into()], wanted: 5 });
+        let game = FakeGame { gem_count: 4, gems: vec![(1, "Greater Healing"), (2, "Togor's Insects"), (3, "Malosi"), (4, "Envenomed Breath")], ..shaman() };
+        assert_eq!(plan_gems(&config, SPELLS, &game, &[]), GemPlan { next: None, left_out: vec!["Sicken (dot)".into(), "Frost Strike (nuke)".into()], wanted: 6 });
     }
 
     #[test]
     fn a_spell_that_wouldnt_memorize_gives_way_to_the_next_best() {
         let config = spells_config();
-        let game = FakeGame { book: BOOK.to_vec(), gem_count: 8, ..FakeGame::default() };
-        assert_eq!(plan_gems(&config, LINES, &game, &["Greater Healing".into()]).next, memorize(1, "Healing"));
+        assert_eq!(plan_gems(&config, SPELLS, &shaman(), &["Greater Healing".into()]).next, memorize(1, "Healing"));
     }
 
     #[test]
-    fn one_spell_in_two_lines_takes_one_gem() {
+    fn one_spell_in_two_archetypes_takes_one_gem() {
         let config = Config::from_layers(&[crate::Layer { name: "Shaman.ini".into(), sections: vec![("heal".into(), vec![("1".into(), "Healing".into())]), ("heal.hot".into(), vec![("1".into(), "Healing".into())])] }]).0;
         let game = FakeGame { book: vec!["Healing"], gem_count: 8, gems: vec![(1, "Healing")], ..FakeGame::default() };
-        assert_eq!(plan_gems(&config, &["heal", "heal.hot"], &game, &[]), GemPlan { next: None, left_out: vec![], wanted: 1 });
+        assert_eq!(plan_gems(&config, &[Spells::Best("heal"), Spells::Best("heal.hot")], &game, &[]), GemPlan { next: None, left_out: vec![], wanted: 1 });
     }
 }

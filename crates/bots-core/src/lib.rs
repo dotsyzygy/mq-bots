@@ -9,7 +9,7 @@ mod state;
 use std::fmt;
 use std::str::FromStr;
 
-pub use class::{Action, Class, Game, GemPlan, REFRESH_BUFF_AT, aura_named, disc_usable, for_class, plan_gems, same_name};
+pub use class::{Action, Class, Game, GemPlan, Spells, REFRESH_BUFF_AT, aura_named, disc_usable, for_class, plan_gems, same_name, spells_used};
 pub use commands::{Command, USAGE, parse};
 pub use config::{Config, Layer, SETTINGS_SECTION};
 pub use engage::{Decision, Mob, Seen, decide};

@@ -65,7 +65,7 @@ Follow=off
 
 Each class's archetypes, what goes in them and which are used yet: [docs/archetypes.md](docs/archetypes.md). The shaman doesn't melee, and so far only memorizes its spells. A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
 
-A caster memorizes its spells itself, out of combat, after loading and after `/bots reload`: one gem for each spell archetype with a spell in the spell book that's castable at the character's level, using the best such spell, so one INI works at every level. A spell already memorized stays in its gem; the others go into gems holding nothing the bot uses. With more archetypes than gems, the class's most important ones get gems (see [docs/archetypes.md](docs/archetypes.md)), and chat says which were left out. A spell the game won't memorize is reported, and the next best is used until `/bots reload`.
+A caster memorizes its spells itself, out of combat, after loading and after `/bots reload`: for each spell archetype, the best spell in the spell book that's castable at the character's level, so one INI works at every level, and for `debuff` and `dot`, the best of each kind (one slow, one malo...; see [docs/archetypes.md](docs/archetypes.md)). Each gets a gem. A spell already memorized stays in its gem; the others go into gems holding nothing the bot uses. With more spells than gems, the class's most important ones get gems, and chat says which were left out. A spell the game won't memorize is reported, and the next best is used until `/bots reload`.
 
 ## License
 

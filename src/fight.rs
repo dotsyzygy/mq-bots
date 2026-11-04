@@ -128,10 +128,10 @@ impl Bots {
         if self.state.memorize
             && let Some(class) = &self.class
         {
-            let plan = plan_gems(&self.config, class.spell_lines(), &seeing, &self.fight.given_up_spells);
+            let plan = plan_gems(&self.config, class.spells(), &seeing, &self.fight.given_up_spells);
             if !plan.left_out.is_empty() && !std::mem::replace(&mut self.fight.said_left_out, true) {
                 let gems = seeing.gem_count();
-                mq.chat(yellow!("[Bots] {} spell lines for {gems} gems, so these aren't memorized: {}", plan.wanted, plan.left_out.join(", ")));
+                mq.chat(yellow!("[Bots] {} spells to keep memorized but {gems} gems, so these are left out: {}", plan.wanted, plan.left_out.join(", ")));
             }
             self.state.memorize = plan.next.is_some();
             action = plan.next;
@@ -343,6 +343,11 @@ impl Game for Seeing<'_> {
 
     fn spell_known(&self, name: &str) -> bool {
         self.mq.spell_book().any(|(_, spell)| same_name(name, &spell.name()) && castable(self.mq, &spell, self.me.level()))
+    }
+
+    fn spell_kind(&self, name: &str) -> Option<i32> {
+        let spell = self.mq.spell_book().map(|(_, spell)| spell).find(|spell| same_name(name, &spell.name()))?;
+        Some(spell.subcategory()).filter(|kind| *kind != 0)
     }
 
     fn gem_count(&self) -> usize {

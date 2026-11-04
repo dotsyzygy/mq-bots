@@ -73,18 +73,9 @@ impl Config {
         self.archetypes.get(&name.to_ascii_lowercase()).map_or(&[], Vec::as_slice)
     }
 
-    /// Sections that aren't among `known` (a class's archetypes, where `#`
-    /// stands for a number: `dot.#`), as read.
+    /// Sections that aren't among `known` (a class's archetypes), as read.
     pub fn unknown_archetypes(&self, known: &[&str]) -> Vec<&str> {
-        self.archetypes.keys().map(String::as_str).filter(|name| !known.iter().any(|known| matches(known, name).is_some())).collect()
-    }
-
-    /// The archetypes there are sections for that `pattern` names: itself,
-    /// or for `dot.#`, `dot.1`, `dot.2`... in number order.
-    pub fn archetypes_like(&self, pattern: &str) -> Vec<&str> {
-        let mut found: Vec<(u32, &str)> = self.archetypes.keys().filter_map(|name| Some((matches(pattern, name)?, name.as_str()))).collect();
-        found.sort_by_key(|&(number, _)| number);
-        found.into_iter().map(|(_, name)| name).collect()
+        self.archetypes.keys().map(String::as_str).filter(|name| !known.iter().any(|k| k.eq_ignore_ascii_case(name))).collect()
     }
 
     /// Every archetype with its entries, by name.
@@ -115,14 +106,6 @@ fn archetype(entries: &[(String, String)], problem: &mut impl FnMut(String)) -> 
     }
     numbered.sort_by_key(|&(number, _)| number);
     numbered.into_iter().filter(|(_, value)| !value.is_empty()).map(|(_, value)| value.to_owned()).collect()
-}
-
-/// Whether archetype `name` is `pattern`, ignoring case, where a `#` ending
-/// `pattern` stands for a number; that number, or 0 without a `#`.
-fn matches(pattern: &str, name: &str) -> Option<u32> {
-    let Some(prefix) = pattern.strip_suffix('#') else { return pattern.eq_ignore_ascii_case(name).then_some(0) };
-    let number = name.get(prefix.len()..).filter(|_| name[..prefix.len()].eq_ignore_ascii_case(prefix))?;
-    number.bytes().all(|b| b.is_ascii_digit()).then(|| number.parse().ok()).flatten()
 }
 
 fn switch(value: &str) -> Option<bool> {
@@ -180,16 +163,6 @@ mod tests {
         let monk = layer("Monk.ini", &[("ability.offensive", &[("1", "Flying Kick")]), ("Disc.Regular", &[("1", "Thunderkick")])]);
         let (config, _) = Config::from_layers(&[monk]);
         assert_eq!(config.unknown_archetypes(&["ability.offense", "disc.regular"]), ["ability.offensive"]);
-    }
-
-    #[test]
-    fn numbered_archetypes_match_a_hash() {
-        let shaman = layer("Shaman.ini", &[("dot.2", &[("1", "Bane")]), ("DOT.10", &[("1", "Bane")]), ("dot.1", &[("1", "Bane")]), ("dot.", &[("1", "Bane")]), ("dot.x", &[("1", "Bane")]), ("dot.+1", &[("1", "Bane")]), ("nuke", &[("1", "Bolt")])]);
-        let (config, _) = Config::from_layers(&[shaman]);
-        assert_eq!(config.unknown_archetypes(&["dot.#", "nuke"]), ["dot.", "dot.+1", "dot.x"]);
-        assert_eq!(config.archetypes_like("Dot.#"), ["dot.1", "dot.2", "dot.10"]);
-        assert_eq!(config.archetypes_like("NUKE"), ["nuke"]);
-        assert_eq!(config.archetypes_like("heal"), Vec::<&str>::new());
     }
 
     #[test]

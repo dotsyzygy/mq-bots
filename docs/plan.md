@@ -95,16 +95,16 @@ Archetypes:
 |---|---|
 | `heal` | Single-target heal |
 | `heal.hot` | Single-target heal over time, kept on the tank |
-| `heal.group` | Group heal over time |
+| `heal.group.hot` | Group heal over time (`heal.group`, a direct group heal, is a separate archetype for classes that have one) |
 | `buff.melee` | Short melee buffs (Spirit of the Panther), on melee members and pets in combat |
-| `debuff.1`, `debuff.2`... | One debuff line each (slow, malo, cripple...), each best first; kept up in number order |
-| `dot.1`, `dot.2`... | One DoT line each, the same way |
+| `debuff` | Slows, malos, cripples...: the best known of each kind (the spell's subcategory), kept up in list order |
+| `dot` | DoTs, the same way (one poison, one disease) |
 | `nuke` | Direct damage |
 
 Each pulse the shaman does the first of these that applies:
 
 1. **Emergency heal:** the tank below `HealAt`, or anyone else below `EmergencyAt`: `heal` on the lowest, the tank winning ties. A cast that isn't a heal is stopped for it.
-2. **Group HoT:** `GroupHotCount` (default 2) or more members below `GroupHotAt`, and the group HoT isn't on them: `heal.group`.
+2. **Group HoT:** `GroupHotCount` (default 2) or more members below `GroupHotAt`, and the group HoT isn't on them: `heal.group.hot`.
 3. **Tank HoT:** while the tank is fighting, keep `heal.hot` on it.
 4. **Melee buffs:** in combat, `buff.melee` on each melee-class member (WAR, PAL, SHD, MNK, ROG, BER, RNG, BST, BRD) and each member's pet, the tank first, when it's missing or under `RebuffAt` seconds left.
 5. **Debuffs, then DoTs:** on the MA's target while engaged, each line that isn't on it from this shaman, while mana is above `DpsManaMin` and the mob is above `DotStopAt` HP%. After `MaxResists` resists in a row, a line is given up on that mob (slow-immune mobs).
@@ -117,7 +117,7 @@ How it sees things:
 - **The mob's debuffs and DoTs:** `target_buffs` with each buff's caster, once `target_buffs_populated` says they've arrived.
 - **Casting on a member:** target it, cast, then go back to the MA's target.
 
-Gems: no INI section; the bot works them out (decided 2026-11-04, replacing a `[Gems]` section). Each archetype above with a spell the shaman knows needs one gem, holding its best known spell, so one INI works at every level. With more of them than gems (mq-emu `gem_count`, 8 to 12 by level and AAs), the order above decides which get one, and chat says which were left out. A spell already memorized stays in its gem, so a reload or a new spell only memorizes what changed. Out of combat, on load and on `/bots reload`.
+Gems: no INI section; the bot works them out (decided 2026-11-04, replacing a `[Gems]` section). Each spell the shaman uses (the best known of each archetype above, and of each kind for `debuff` and `dot`) needs one gem, so one INI works at every level. With more spells than gems (mq-emu `gem_count`, 8 to 12 by level and AAs), the order above decides which get one, and chat says which were left out. A spell already memorized stays in its gem, so a reload or a new spell only memorizes what changed. Out of combat, on load and on `/bots reload`.
 
 Later: long-duration buffs (memorized for the cast in a spare gem, then swapped back), canni and medding, the shaman's own pet.
 
@@ -133,7 +133,7 @@ Later: long-duration buffs (memorized for the cast in a spare gem, then swapped 
 Shaman milestones, started before monk milestone 5:
 
 - S1. ~~mq-emu: the safe cast API (see API gaps), then release. Posse: pets' buffs.~~ Done: mq-emu 0.1.10 (`Task::cast`, `Task::memorize`, `CastResult::completed`, `Task::watch_messages`, `cast_time_left`, through `eqclient.dll`, which `cargo mq deploy` ships next to the plugin) and MQ2Posse 0.1.1 (`pet_buffs`, layout 6). Tried in game: a buff cast lands exactly when `Task::cast` says, a stronger buff already on gives `DidNotTakeHold`, and a stopped cast's late messages don't count against the next one.
-- S2. Casting in `bots-core` (a `Cast` action, gem and cast state in `Game`) and memorizing the spell lines out of combat. Built, not yet tried in game: `Action::Cast` (on a spawn, going back to the target before) and `Action::Memorize` run as mq-emu tasks, one at a time, and a cast that doesn't go off is said in chat once. `Game` has `spell_known`, `gem_count` (mq-emu 0.1.11, `${Me.NumGems}`), `spell_gem`, `spell_ready` and `casting`. `plan_gems` keeps a class's `spell_lines` memorized after load and `/bots reload`. A shaman module that doesn't melee (`Class::melee`) and only memorizes so far; class archetypes can be numbered (`dot.#`).
+- S2. Casting in `bots-core` (a `Cast` action, gem and cast state in `Game`) and memorizing the spells out of combat. Built, not yet tried in game: `Action::Cast` (on a spawn, going back to the target before) and `Action::Memorize` run as mq-emu tasks, one at a time, and a cast that doesn't go off is said in chat once. `Game` has `spell_known`, `spell_kind` (subcategory), `gem_count` (mq-emu 0.1.11, `${Me.NumGems}`), `spell_gem`, `spell_ready` and `casting`. A class lists its `spells` as `Spells::Best` or `Spells::EachKind` archetypes (decided 2026-11-04, replacing `debuff.1`, `debuff.2`... sections: on ProFusion the subcategory tells slows, malos, cripples, poison and disease DoTs apart); `spells_used` picks them and `plan_gems` keeps them memorized after load and `/bots reload`. A shaman module that doesn't melee (`Class::melee`) and only memorizes so far.
 - S3. Heals: emergency heals, group HoT, tank HoT, stopping a non-heal cast for a heal.
 - S4. Melee buffs on members and pets.
 - S5. Debuffs, DoTs and nukes, with mana floors and giving up after resists.

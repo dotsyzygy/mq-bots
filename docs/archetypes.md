@@ -11,7 +11,7 @@ An archetype is a kind of thing a class does, such as a heal or a kick. The code
 
 - The bot uses the first entry the character has and can use at their level, so one list covers every level. List everything from best to worst, including spells you don't have yet.
 - Names match without the rank: `Ashenhand Discipline` matches `Ashenhand Discipline Rk. II`. Case doesn't matter.
-- Archetypes written with `#` are numbered lines: `dot.1`, `dot.2`, `dot.3`... Each is its own section with its own list, used in number order.
+- A few archetypes (marked *each kind* below) use more than one entry: the best one you have of each kind of spell, in list order. The kind is the game's own (the spell's subcategory), so `[debuff]` keeps one slow, one malo and one cripple, and `[dot]` one poison and one disease DoT, and you still list every rank. A spell the game gives no kind counts as its own.
 - A section the class doesn't read (usually a typo) is reported in chat on load and on `/bots reload`.
 - `[Settings]` isn't an archetype; see the README.
 
@@ -29,17 +29,19 @@ An archetype is a kind of thing a class does, such as a heal or a kick. The code
 
 ## Shaman
 
-Listed most important first. The shaman keeps the best spell it knows of each one memorized, one gem each; if there are more than gems, the ones lower down are left out, and chat says which.
+Listed most important first. The shaman keeps memorized what it uses of each, one gem per spell; if there are more spells than gems, the ones lower down are left out, and chat says which.
 
 | Archetype | What goes in it | Used yet? |
 |---|---|---|
 | `heal` | Single-target heal | Memorized; cast from S3 |
 | `heal.hot` | Single-target heal over time, kept on the tank | Memorized; cast from S3 |
-| `heal.group` | Group heal over time | Memorized; cast from S3 |
+| `heal.group.hot` | Group heal over time | Memorized; cast from S3 |
 | `buff.melee` | Short melee buffs (Spirit of the Panther), on melee and pets in combat | Memorized; cast from S4 |
-| `debuff.#` | One debuff line each (`debuff.1` slow, `debuff.2` malo, `debuff.3` cripple...), kept on the mob in number order | Memorized; cast from S5 |
-| `dot.#` | One DoT line each, the same way | Memorized; cast from S5 |
+| `debuff` | Slows, malos, cripples..., *each kind*, kept on the mob in list order | Memorized; cast from S5 |
+| `dot` | DoTs, *each kind* (poison, disease), the same way | Memorized; cast from S5 |
 | `nuke` | Direct damage | Memorized; cast from S5 |
+
+`heal.group` (a direct group heal, no HoT) is a different archetype, for classes that have one; the shaman doesn't.
 
 Example: `MQ2Bots_<server>_Shaman.ini`
 
@@ -48,13 +50,18 @@ Example: `MQ2Bots_<server>_Shaman.ini`
 1=Superior Healing
 2=Greater Healing
 
-[debuff.1]
+; The slow comes first, so it goes on before the malo.
+[debuff]
 1=Turgur's Insects
 2=Togor's Insects
+3=Malo
+4=Malosini
 
-[debuff.2]
-1=Malosini
-2=Malo
+[dot]
+1=Bane of Nife
+2=Envenomed Bolt
+3=Pox of Bertoxxulous
+4=Plague
 
 [nuke]
 1=Ice Strike
