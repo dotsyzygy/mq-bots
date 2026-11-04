@@ -1,8 +1,11 @@
 #![allow(non_snake_case)] // the crate is named after the DLL
 
+mod fight;
+mod posse;
+
 use std::path::{Path, PathBuf};
 
-use bots_core::{Command, Config, Layer, State, USAGE, parse};
+use bots_core::{Class, Command, Config, Layer, Mode, State, USAGE, for_class, parse};
 use mq_emu::{GameState, Ini, IniError, Mq, Plugin, green, red, yellow};
 
 const COMMAND: &str = "/bots";
@@ -12,6 +15,11 @@ struct Bots {
     loaded_for: String,
     config: Config,
     state: State,
+    /// What this character's class does in a fight; `None` until a class has one.
+    class: Option<Box<dyn Class>>,
+    /// Where the Main Assist's target comes from.
+    posse: Option<posse::PosseLink>,
+    fight: fight::Fight,
 }
 
 impl Plugin for Bots {
@@ -20,7 +28,7 @@ impl Plugin for Bots {
             mq.chat(red!("[Bots] couldn't add {COMMAND}: {e}"));
         }
         let config = Config::default();
-        Bots { loaded_for: String::new(), state: State::new(&config), config }
+        Bots { loaded_for: String::new(), state: State::new(&config), config, class: None, posse: None, fight: fight::Fight::default() }
     }
 
     fn on_pulse(&mut self, mq: &Mq<Self>) {
@@ -30,7 +38,11 @@ impl Plugin for Bots {
         {
             self.load(mq);
             self.state = State::new(&self.config);
+            self.come_in(mq, &name);
             self.loaded_for = name;
+        }
+        if !self.loaded_for.is_empty() && mq.game_state() == GameState::InGame {
+            self.fight(mq);
         }
     }
 
@@ -38,6 +50,7 @@ impl Plugin for Bots {
         // The next character in may not be this one.
         if matches!(state, GameState::CharacterSelect | GameState::CharacterCreate | GameState::LoggingIn) {
             self.loaded_for.clear();
+            self.posse = None;
         }
     }
 }
@@ -59,7 +72,11 @@ impl Bots {
                 self.state.mode = mode;
                 mq.chat(green!("[Bots] mode {mode}"));
             }
-            Command::Attack => mq.chat(yellow!("[Bots] attack isn't built yet")),
+            Command::Attack if self.state.mode == Mode::Off => mq.chat(yellow!("[Bots] mode is off")),
+            Command::Attack => {
+                self.state.attack_requested = true;
+                self.state.backed_off = false;
+            }
             Command::Backoff => {
                 self.state.backed_off = true;
                 mq.chat(green!("[Bots] backed off until /bots resume"));
@@ -84,12 +101,36 @@ impl Bots {
 
     fn status(&self, mq: &Mq<Self>) {
         mq.chat(green!("[Bots] {}", self.state.summary()));
+        match &self.posse {
+            Some(posse) => mq.chat(green!("[Bots] the MA's target comes from posse {}", posse.name)),
+            None => mq.chat(yellow!("[Bots] not in a posse, so not assisting")),
+        }
         let archetypes: Vec<String> = self.config.archetypes().map(|(name, entries)| format!("{name} ({})", entries.len())).collect();
         if archetypes.is_empty() {
             mq.chat(yellow!("[Bots] no archetypes"));
         } else {
             mq.chat(green!("[Bots] archetypes: {}", archetypes.join(", ")));
         }
+    }
+
+    /// Picks the class's module and the posse, for a character just in.
+    fn come_in(&mut self, mq: &Mq<Self>, character: &str) {
+        let class = mq.me().and_then(|me| mq.class_name(me.class())).unwrap_or_default();
+        self.class = for_class(&class);
+        if self.class.is_none() {
+            mq.chat(yellow!("[Bots] {class} doesn't fight yet"));
+        }
+        self.posse = match posse::PosseLink::open(mq, character) {
+            Ok(Some(link)) => Some(link),
+            Ok(None) => {
+                mq.chat(yellow!("[Bots] not in a posse (AutoJoin=0), so not assisting"));
+                None
+            }
+            Err(e) => {
+                mq.chat(red!("[Bots] {e}, so not assisting"));
+                None
+            }
+        };
     }
 
     /// Reads the class's INI and then the character's, saying in chat what

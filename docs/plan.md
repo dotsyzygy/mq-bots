@@ -45,9 +45,11 @@ Monk archetypes for the MVP (names may change while building):
 
 Engaging is automatic off the MA, with commands that override it.
 
-- **Assist:** a bot in `assist` mode engages the MA's target when it is an NPC, at or below the assist-at HP%, and within the camp radius. It sticks behind the target (MQ2MoveUtils `/stick behind`) and turns on attack.
+- **Assist:** a bot in `assist` mode engages the MA's target when it is an NPC, at or below the assist-at HP%, and within the camp radius of the MA. It sticks behind the target (MQ2MoveUtils `/stick behind`) and turns on attack.
 - **Regular vs burn:** in regular phase the bot uses `ability.offense` and `disc.regular`. `/bots burn` starts a burn phase: `disc.burn` and `aa.burn` are used in priority order. The burn lasts until the current combat is over (no group member is attacking and the extended target list has no haters) and then turns itself off; `/bots burn off` ends it early. Auto-burn conditions (named mob, target count) come later.
 - **Backoff:** `/bots backoff` drops the target, turns attack off and stops auto-engaging until `/bots resume`.
+- **Camp:** for now the camp is wherever the MA is, so the bots just follow the MA. Later, `deploy` and `packup` commands set and clear a static spot to camp at, and the camp radius is measured from there while deployed.
+- **Feigning:** while feigned, a bot does nothing else. It still checks that it's feigning whenever FD still applies (aggro, low HP), and feigns again if something knocked it out, since AoE spells and the like sometimes do.
 - **Out of combat:** follow the driver (MQ2AdvPath `/afollow`), with an on/off switch.
 
 Modes per bot: `off` (does nothing), `manual` (only reacts to commands), `assist` (auto-engages). `tank` and `puller` come later.
@@ -76,14 +78,15 @@ Sent to every bot with `/pc` through Posse.
 - A `${Bots}` TLO, until something needs it.
 - A HUD or ImGui panels; a driver HUD comes later.
 - Casters, cast-result tracking in the bot, raids, pulling, MQ2Nav.
+- A static camp (`deploy` / `packup`); the camp is the MA until then.
 
 ## MVP milestones
 
 1. ~~Fill the mq-emu gaps for monk (see API gaps) and release mq-emu.~~ Done in mq-emu 0.1.6.
 2. ~~Confirm Posse's `COMBAT` flag meaning; no new Posse fields expected for the monk.~~ Done: it's auto attack (`${Me.Combat}`), which is what "attacking" means in the combat flow.
 3. ~~Scaffold the workspace, `/bots` commands and INI loading.~~ Done. `bots-core` holds what doesn't touch the game (command parsing, config layering, the bot's state) and is tested off-game, like `posse-core`; the plugin crate does the game access. Commands set state only; acting on it starts in milestone 4.
-4. Monk: assist, stick, attack, abilities and regular discs.
-5. Burn phase, Mend, Feign Death.
+4. Monk: assist, stick, attack, abilities and regular discs. Built; to test in game. `bots-core` decides what to engage (`engage.rs`) and what the monk uses (`class/monk.rs`, against a `Game` trait the plugin implements), so both are tested off-game. The camp is the MA: a mob qualifies within `CampRadius` of the MA. mq-emu 0.1.7 added what this needed: `set_auto_attack` and `melee_range` (`${Target.MaxRangeTo}`, so abilities wait until in range). posse-core now holds MQ2Posse's settings names and `auto_join_posse`, so the bots find the same posse Posse joins. Disengaging on `/bots backoff` came with it, so milestone 6 leaves following and the group test.
+5. Burn phase, Mend, Feign Death (including feigning again when knocked out of it while FD still applies).
 6. Follow and backoff. Test in a group of 4.
 
 ## API gaps

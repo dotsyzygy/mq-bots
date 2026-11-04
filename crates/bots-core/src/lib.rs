@@ -1,14 +1,18 @@
 //! MQ2Bots' logic that doesn't touch the game, so it's tested without one.
 
+mod class;
 mod commands;
 mod config;
+mod engage;
 mod state;
 
 use std::fmt;
 use std::str::FromStr;
 
+pub use class::{Action, Class, Game, for_class, same_name};
 pub use commands::{Command, USAGE, parse};
 pub use config::{Config, Layer, SETTINGS_SECTION};
+pub use engage::{Decision, Mob, Seen, decide};
 pub use state::State;
 
 /// What a bot does on its own.
