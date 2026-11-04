@@ -49,39 +49,7 @@ mod tests {
 
     use super::*;
     use crate::Layer;
-
-    #[derive(Default)]
-    struct FakeGame {
-        ready: Vec<&'static str>,
-        known: Vec<&'static str>,
-        auras: Vec<&'static str>,
-        in_range: bool,
-        buffs: Vec<(&'static str, Duration)>,
-    }
-
-    impl Game for FakeGame {
-        fn ability_ready(&self, name: &str) -> bool {
-            self.ready.contains(&name)
-        }
-        fn disc_ready(&self, name: &str) -> bool {
-            self.ready.contains(&name)
-        }
-        fn disc_known(&self, name: &str) -> bool {
-            self.known.contains(&name)
-        }
-        fn aura_active(&self, name: &str) -> bool {
-            self.auras.contains(&name)
-        }
-        fn disc_buff_left(&self, name: &str) -> Option<Duration> {
-            self.buffs
-                .iter()
-                .find(|(buff, _)| *buff == name)
-                .map(|(_, left)| *left)
-        }
-        fn in_melee_range(&self) -> bool {
-            self.in_range
-        }
-    }
+    use crate::class::FakeGame;
 
     fn config() -> Config {
         let numbered = |names: &[&str]| {

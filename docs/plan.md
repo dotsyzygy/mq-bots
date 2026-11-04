@@ -117,9 +117,9 @@ How it sees things:
 - **The mob's debuffs and DoTs:** `target_buffs` with each buff's caster, once `target_buffs_populated` says they've arrived.
 - **Casting on a member:** target it, cast, then go back to the MA's target.
 
-Gems: a `[Gems]` section maps gem numbers to archetypes (`1=heal`, `2=heal.hot`...). Out of combat, on load and on `/bots reload`, the shaman memorizes the best known spell of each archetype into its gem, so one INI works at every level.
+Gems: no INI section; the bot works them out (decided 2026-11-04, replacing a `[Gems]` section). Each archetype above with a spell the shaman knows needs one gem, holding its best known spell, so one INI works at every level. With more of them than gems (mq-emu `gem_count`, 8 to 12 by level and AAs), the order above decides which get one, and chat says which were left out. A spell already memorized stays in its gem, so a reload or a new spell only memorizes what changed. Out of combat, on load and on `/bots reload`.
 
-Later: long-duration buffs, canni and medding, the shaman's own pet.
+Later: long-duration buffs (memorized for the cast in a spare gem, then swapped back), canni and medding, the shaman's own pet.
 
 ## MVP milestones
 
@@ -133,7 +133,7 @@ Later: long-duration buffs, canni and medding, the shaman's own pet.
 Shaman milestones, started before monk milestone 5:
 
 - S1. ~~mq-emu: the safe cast API (see API gaps), then release. Posse: pets' buffs.~~ Done: mq-emu 0.1.10 (`Task::cast`, `Task::memorize`, `CastResult::completed`, `Task::watch_messages`, `cast_time_left`, through `eqclient.dll`, which `cargo mq deploy` ships next to the plugin) and MQ2Posse 0.1.1 (`pet_buffs`, layout 6). Tried in game: a buff cast lands exactly when `Task::cast` says, a stronger buff already on gives `DidNotTakeHold`, and a stopped cast's late messages don't count against the next one.
-- S2. Casting in `bots-core` (a `Cast` action, gem and cast state in `Game`) and memorizing `[Gems]` out of combat.
+- S2. Casting in `bots-core` (a `Cast` action, gem and cast state in `Game`) and memorizing the spell lines out of combat. Built, not yet tried in game: `Action::Cast` (on a spawn, going back to the target before) and `Action::Memorize` run as mq-emu tasks, one at a time, and a cast that doesn't go off is said in chat once. `Game` has `spell_known`, `gem_count` (mq-emu 0.1.11, `${Me.NumGems}`), `spell_gem`, `spell_ready` and `casting`. `plan_gems` keeps a class's `spell_lines` memorized after load and `/bots reload`. A shaman module that doesn't melee (`Class::melee`) and only memorizes so far; class archetypes can be numbered (`dot.#`).
 - S3. Heals: emergency heals, group HoT, tank HoT, stopping a non-heal cast for a heal.
 - S4. Melee buffs on members and pets.
 - S5. Debuffs, DoTs and nukes, with mana floors and giving up after resists.

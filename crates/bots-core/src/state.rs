@@ -14,12 +14,15 @@ pub struct State {
     pub attack_requested: bool,
     /// The mob being fought, by spawn ID.
     pub engaged: Option<u32>,
+    /// `[Gems]` is to be memorized out of combat: set on load and on
+    /// `/bots reload`, and cleared once every gem holds its spell.
+    pub memorize: bool,
 }
 
 impl State {
     /// How a character starts, from its config.
     pub fn new(config: &Config) -> State {
-        State { mode: config.mode, backed_off: false, burning: false, following: config.follow, attack_requested: false, engaged: None }
+        State { mode: config.mode, backed_off: false, burning: false, following: config.follow, attack_requested: false, engaged: None, memorize: true }
     }
 
     /// For `/bots` with nothing after it: "mode assist, following, burning".

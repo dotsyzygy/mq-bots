@@ -63,7 +63,9 @@ Follow=off
 1=Thunderkick
 ```
 
-Monk archetypes: `ability.offense`, `disc.regular`, `aura`, `disc.burn`, `aa.burn`, `mend`, `fd` (see the plan). A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
+Monk archetypes: `ability.offense`, `disc.regular`, `aura`, `disc.burn`, `aa.burn`, `mend`, `fd` (see the plan). Shaman archetypes: `heal`, `heal.hot`, `heal.group`, `buff.melee`, `debuff.1`, `debuff.2`..., `dot.1`, `dot.2`..., `nuke`; the shaman doesn't melee, and so far only memorizes its spells. A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
+
+A caster memorizes its spells itself, out of combat, after loading and after `/bots reload`: one gem for each spell archetype with a spell in the spell book that's castable at the character's level, using the best such spell, so one INI works at every level. A spell already memorized stays in its gem; the others go into gems holding nothing the bot uses. With more archetypes than gems, the class's most important ones get gems (the shaman's in the order listed above), and chat says which were left out. A spell the game won't memorize is reported, and the next best is used until `/bots reload`.
 
 ## License
 

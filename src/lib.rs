@@ -46,11 +46,12 @@ impl Plugin for Bots {
         }
     }
 
-    fn on_set_game_state(&mut self, _mq: &Mq<Self>, state: GameState) {
+    fn on_set_game_state(&mut self, mq: &Mq<Self>, state: GameState) {
         // The next character in may not be this one.
         if matches!(state, GameState::CharacterSelect | GameState::CharacterCreate | GameState::LoggingIn) {
             self.loaded_for.clear();
             self.posse = None;
+            self.stop_task(mq);
         }
     }
 }
@@ -98,6 +99,9 @@ impl Bots {
             Command::Reload => {
                 self.load(mq);
                 self.fight.given_up_auras.clear();
+                self.fight.given_up_spells.clear();
+                self.fight.said_left_out = false;
+                self.state.memorize = true;
                 if let Some(class) = &self.class {
                     self.check_archetypes(mq, class.archetypes());
                 }
@@ -123,6 +127,7 @@ impl Bots {
     fn come_in(&mut self, mq: &Mq<Self>, character: &str) {
         let class = mq.me().and_then(|me| mq.class_name(me.class())).unwrap_or_default();
         self.class = for_class(&class);
+        self.stop_task(mq);
         self.fight = fight::Fight::default();
         match &self.class {
             None => mq.chat(yellow!("[Bots] {class} isn't implemented yet")),
