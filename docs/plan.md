@@ -81,7 +81,7 @@ Sent to every bot with `/pc` through Posse.
 
 1. ~~Fill the mq-emu gaps for monk (see API gaps) and release mq-emu.~~ Done in mq-emu 0.1.6.
 2. ~~Confirm Posse's `COMBAT` flag meaning; no new Posse fields expected for the monk.~~ Done: it's auto attack (`${Me.Combat}`), which is what "attacking" means in the combat flow.
-3. Scaffold the workspace, `/bots` commands and INI loading.
+3. ~~Scaffold the workspace, `/bots` commands and INI loading.~~ Done. `bots-core` holds what doesn't touch the game (command parsing, config layering, the bot's state) and is tested off-game, like `posse-core`; the plugin crate does the game access. Commands set state only; acting on it starts in milestone 4.
 4. Monk: assist, stick, attack, abilities and regular discs.
 5. Burn phase, Mend, Feign Death.
 6. Follow and backoff. Test in a group of 4.
