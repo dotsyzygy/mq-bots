@@ -68,7 +68,7 @@ Sent to every bot with `/pc` through Posse.
 ## Posse
 
 - Bots read Posse's shared memory through `posse-core` directly (typed, no string parsing, no passthrough lag). The `${Posse}` TLO stays for macros and Lua.
-- Live status fields are added only when a bot needs them, and each needs an mq-emu getter first. Monk MVP needs from the MA: target ID, combat state, position. From each member: HP%, target ID. All are already published.
+- Live status fields are added only when a bot needs them, and each needs an mq-emu getter first. Monk MVP needs from the MA: target ID, auto attack (the `COMBAT` flag), position. From each member: HP%, target ID. All are already published.
 - Bots compute a "ready" flag (not medding, resources above threshold, not dead) and publish it through Posse for later pulling logic.
 
 ## Out of scope for the MVP
@@ -80,7 +80,7 @@ Sent to every bot with `/pc` through Posse.
 ## MVP milestones
 
 1. ~~Fill the mq-emu gaps for monk (see API gaps) and release mq-emu.~~ Done in mq-emu 0.1.6.
-2. Confirm Posse's `COMBAT` flag meaning; no new Posse fields expected for the monk.
+2. ~~Confirm Posse's `COMBAT` flag meaning; no new Posse fields expected for the monk.~~ Done: it's auto attack (`${Me.Combat}`), which is what "attacking" means in the combat flow.
 3. Scaffold the workspace, `/bots` commands and INI loading.
 4. Monk: assist, stick, attack, abilities and regular discs.
 5. Burn phase, Mend, Feign Death.
@@ -105,4 +105,4 @@ Missing from mq-emu, to bind before the monk (milestone 1):
 
 Later, for casters: cast-result tracking (mq-emu has chat events and `Spawn::casting` polling, but no API that reports a cast's outcome).
 
-Posse needs nothing new for the monk. Its live status already has `target_id`, `hp_percent`, position, and `COMBAT` and `FEIGNING` flags; the bot reads the MA's target's HP% from the spawn locally. The ready flag comes later. The bots read it with `posse_shm::Mapping::open` and `posse_core::Roster` (`refresh`, `read` by name), linked as path dependencies, since both crates are `publish = false`. Check what the `COMBAT` flag means (auto-attack or combat state) before relying on it.
+Posse needs nothing new for the monk. Its live status already has `target_id`, `hp_percent`, position, and `COMBAT` and `FEIGNING` flags; the bot reads the MA's target's HP% from the spawn locally. The ready flag comes later. The bots read it with `posse_shm::Mapping::open` and `posse_core::Roster` (`refresh`, `read` by name), linked as path dependencies, since both crates are `publish = false`. The `COMBAT` flag is auto attack (`${Me.Combat}`), published from mq-emu's `in_combat`, not the combat state; if a bot needs a member's combat state, that's a new Posse field.
