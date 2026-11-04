@@ -79,7 +79,7 @@ Sent to every bot with `/pc` through Posse.
 
 ## MVP milestones
 
-1. Fill the mq-emu gaps for monk (see API gaps) and release mq-emu.
+1. ~~Fill the mq-emu gaps for monk (see API gaps) and release mq-emu.~~ Done in mq-emu 0.1.6.
 2. Confirm Posse's `COMBAT` flag meaning; no new Posse fields expected for the monk.
 3. Scaffold the workspace, `/bots` commands and INI loading.
 4. Monk: assist, stick, attack, abilities and regular discs.
