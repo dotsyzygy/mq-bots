@@ -95,13 +95,13 @@ Missing from mq-emu, to bind before the monk (milestone 1):
 | Gap | Today | Needed |
 |---|---|---|
 | Combat abilities and discs | done in mq-emu 0.1.5 (`combat_abilities`, `use_combat_ability`, `active_disc`); names include the rank, so INI lists will match without it | |
-| Triggering an ability | `/doability` | `Skill::activate()` |
-| Activating an AA | `/alt activate N` | `AltAbility::activate()` |
-| Aggro | `${Me.PctAggro}`, `${Me.TargetOfTarget}` | my aggro %, aggro holder or target of target |
-| Setting the target | `/target id N` | set target to a spawn |
-| Combat state | `Mq::in_combat()` is really auto-attack | `${Me.CombatState}` typed; consider renaming `in_combat` to say auto-attack |
-| Small helpers | none | endurance %, `is_standing` |
-| Is a plugin loaded | `${Plugin[...]}` | a typed check, to warn when MQ2MoveUtils or MQ2AdvPath is missing |
+| Triggering an ability | done in mq-emu 0.1.6 (`use_ability`) | |
+| Activating an AA | done in mq-emu 0.1.6 (`use_alt_ability`) | |
+| Aggro | done in mq-emu 0.1.6 (`aggro_percent`, `secondary_aggro_percent`, `secondary_aggro_player`, `aggro_lock`, `target_of_target`); `target_of_target` has only been seen empty on this client, and `${Target.AggroHolder}` isn't bound | |
+| Setting the target | done in mq-emu 0.1.6 (`set_target`) | |
+| Combat state | done in mq-emu 0.1.6 (`combat_state`; `in_combat` is deprecated for `is_auto_attacking`) | |
+| Small helpers | done in mq-emu 0.1.6 (`endurance_percent`, `Spawn::is_standing`) | |
+| Is a plugin loaded | done in mq-emu 0.1.6 (`is_plugin_loaded`, by any name `GetPlugin` takes) | |
 
 Later, for casters: cast-result tracking (mq-emu has chat events and `Spawn::casting` polling, but no API that reports a cast's outcome).
 
