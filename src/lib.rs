@@ -104,7 +104,7 @@ impl Bots {
             match read_layer(path) {
                 Ok(Some(layer)) => layers.push(layer),
                 Ok(None) => {}
-                Err(e) => mq.chat(red!("[Bots] couldn't read {}: {e}", path.display())),
+                Err(e) => mq.chat(red!("[Bots] couldn't read config/{}: {e}", file_name(path))),
             }
         }
         let (config, problems) = Config::from_layers(&layers);
@@ -112,7 +112,7 @@ impl Bots {
             mq.chat(yellow!("[Bots] {problem}"));
         }
         if layers.is_empty() {
-            mq.chat(yellow!("[Bots] no config: create {} with the {class} archetypes", paths[0].display()));
+            mq.chat(yellow!("[Bots] no config: create config/{} with the {class} archetypes", file_name(&paths[0])));
         } else {
             let names: Vec<&str> = layers.iter().map(|layer| layer.name.as_str()).collect();
             mq.chat(green!("[Bots] read {}: {} archetypes", names.join(" and "), config.archetypes().count()));
@@ -136,8 +136,11 @@ fn read_layer(path: &Path) -> Result<Option<Layer>, IniError> {
         let entries = ini.section(&section);
         (section, entries)
     });
-    let name = path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    Ok(Some(Layer { name, sections: sections.collect() }))
+    Ok(Some(Layer { name: file_name(path), sections: sections.collect() }))
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned())
 }
 
 mq_emu::plugin!(Bots);
