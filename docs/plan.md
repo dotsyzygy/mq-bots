@@ -82,4 +82,4 @@ Monk:
 Shaman:
 
 - S1. Debuffs, DoTs and nukes, with mana floors and giving up after resists. Stopping a cast for a heal can be tried in game once these cast.
-- S2. Try it in game with the group, melee buffs included (not tried in game yet).
+- S2. Try it in game with the group.
