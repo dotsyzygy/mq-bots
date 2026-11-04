@@ -3,7 +3,8 @@
 use std::time::{Duration, Instant};
 
 use bots_core::{Action, Decision, Game, Mob, Seen, decide, same_name};
-use mq_emu::{GroupRole, Mq, Spawn, SpawnId, green, yellow};
+use bots_core::Mode;
+use mq_emu::{CombatState, GroupRole, Mq, Spawn, SpawnId, SpellId, green, yellow};
 
 use crate::Bots;
 
@@ -12,6 +13,9 @@ const LOOK_EVERY: Duration = Duration::from_millis(100);
 /// Time after an action before the next, so the game has taken the last
 /// (its timers) before readiness is checked again.
 const ACTION_GAP: Duration = Duration::from_millis(500);
+/// The same, out of combat: an aura takes a moment to show in the aura
+/// window, and nothing there is in a hurry.
+const REST_GAP: Duration = Duration::from_secs(3);
 const MOVEUTILS: &str = "MQ2MoveUtils";
 
 #[derive(Default)]
@@ -39,7 +43,7 @@ impl Bots {
         });
         let engaged = self.state.engaged.and_then(|id| mq.spawn(SpawnId(id))).map(|spawn| mob(&spawn, &me));
         match decide(&mut self.state, &self.config, &Seen { ma_target, engaged }) {
-            Decision::Idle => {}
+            Decision::Idle => self.rest(mq, &me),
             Decision::Engage(id) => self.engage(mq, &me, id, ma_target.filter(|mob| mob.id == id).map_or(0, |mob| mob.hp_percent)),
             Decision::Fight => self.attack(mq, &me),
             Decision::Disengage => self.disengage(mq),
@@ -81,7 +85,28 @@ impl Bots {
         }
         let Some(class) = self.class.as_mut() else { return };
         let Some(action) = class.fight(&self.config, &self.state, &Seeing { mq, me }) else { return };
-        match &action {
+        self.act(mq, &action);
+    }
+
+    /// Out of combat: buffs and auras, when nothing is in the way.
+    fn rest(&mut self, mq: &Mq<Self>, me: &Spawn<'_>) {
+        if self.state.mode == Mode::Off || me.is_feigning() || me.is_stunned() || me.casting().is_some() {
+            return;
+        }
+        if mq.is_auto_attacking() || mq.combat_state() == Some(CombatState::Combat) {
+            return;
+        }
+        if self.fight.next_action.is_some_and(|at| Instant::now() < at) {
+            return;
+        }
+        let Some(class) = self.class.as_mut() else { return };
+        let Some(action) = class.rest(&self.config, &self.state, &Seeing { mq, me }) else { return };
+        self.act(mq, &action);
+        self.fight.next_action = Some(Instant::now() + REST_GAP);
+    }
+
+    fn act(&mut self, mq: &Mq<Self>, action: &Action) {
+        match action {
             Action::Ability(name) => {
                 if let Some(skill) = mq.abilities().find(|skill| same_name(name, &skill.name())) {
                     mq.use_ability(&skill);
@@ -138,6 +163,25 @@ impl Game for Seeing<'_> {
         // song window (Fists of Wu) don't take its place.
         let blocked = spell.duration_cap() > 0 && !spell.is_short_duration() && self.mq.active_disc().is_some();
         ability.is_ready() && affordable && !blocked
+    }
+
+    fn disc_known(&self, name: &str) -> bool {
+        self.mq.combat_abilities().any(|ability| same_name(name, &ability.name()))
+    }
+
+    fn aura_active(&self, name: &str) -> bool {
+        let auras = self.mq.auras();
+        if auras.is_empty() {
+            return false;
+        }
+        // The aura's name may be the INI's, the ability's spell's, or the
+        // next spell's (often the aura's own effect).
+        let mut names = vec![name.to_owned()];
+        if let Some(ability) = self.mq.combat_abilities().find(|ability| same_name(name, &ability.name())) {
+            names.push(ability.name());
+            names.extend(self.mq.spell(SpellId(ability.id().0 + 1)).map(|spell| spell.name()));
+        }
+        auras.iter().any(|aura| names.iter().any(|name| same_name(name, &aura.name) || same_name(&aura.name, name)))
     }
 
     fn disc_buff_left(&self, name: &str) -> Option<Duration> {

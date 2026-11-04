@@ -27,6 +27,10 @@ pub trait Game {
     /// A combat ability you have that the game would take now: ready, with
     /// the endurance for it, and no discipline running if it's one.
     fn disc_ready(&self, name: &str) -> bool;
+    /// A combat ability you have, ready or not.
+    fn disc_known(&self, name: &str) -> bool;
+    /// One of your auras is up from the ability or spell `name`.
+    fn aura_active(&self, name: &str) -> bool;
     /// Time left on the buff or song a combat ability gave you; `None` if
     /// it isn't on you or doesn't wear off.
     fn disc_buff_left(&self, name: &str) -> Option<Duration>;
@@ -40,6 +44,8 @@ pub trait Class {
 
     /// The next thing to do against [`State::engaged`], if anything.
     fn fight(&mut self, config: &Config, state: &State, game: &dyn Game) -> Option<Action>;
+    /// The next thing to do out of combat (buffs, auras), if anything.
+    fn rest(&mut self, config: &Config, state: &State, game: &dyn Game) -> Option<Action>;
 }
 
 /// The class's module, by the game's name for it ("Monk"); `None` for a
@@ -54,6 +60,14 @@ pub fn for_class(name: &str) -> Option<Box<dyn Class>> {
 /// A combat ability to use now: ready, and not still buffing you.
 pub fn disc_usable(game: &dyn Game, name: &str) -> bool {
     game.disc_ready(name) && game.disc_buff_left(name).is_none_or(|left| left <= REFRESH_BUFF_AT)
+}
+
+/// The best aura in the `aura` archetype that you have, if it isn't up and
+/// can be used. Only the best: a lesser one up doesn't stop it, so a new
+/// aura takes over as soon as you have it.
+pub fn keep_aura(config: &Config, game: &dyn Game) -> Option<Action> {
+    let best = config.archetype("aura").iter().find(|name| game.disc_known(name))?;
+    (!game.aura_active(best) && disc_usable(game, best)).then(|| Action::Disc(best.clone()))
 }
 
 /// Whether an INI entry names the game's ability or spell `game`: the same,

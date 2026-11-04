@@ -36,6 +36,7 @@ Monk archetypes for the MVP (names may change while building):
 |---|---|
 | `ability.offense` | Kicks and strikes used whenever ready (Flying Kick, Tiger Claw...) |
 | `disc.regular` | Short discs used during normal DPS |
+| `aura` | Auras, best first; out of combat the best one the monk has is kept up (mq-emu 0.1.9 reads the aura window) |
 | `disc.burn` | Big discs used only during a burn |
 | `aa.burn` | AAs used only during a burn |
 | `mend` | Self-heal below an HP% |

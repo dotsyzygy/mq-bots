@@ -1,6 +1,6 @@
 //! The monk: kicks and strikes whenever they're ready, then regular discs.
 
-use super::{Action, Class, Game, disc_usable};
+use super::{Action, Class, Game, disc_usable, keep_aura};
 use crate::{Config, State};
 
 pub struct Monk;
@@ -8,7 +8,11 @@ pub struct Monk;
 impl Class for Monk {
     fn archetypes(&self) -> &'static [&'static str] {
         // Burns, Mend and Feign Death come later, but their lists can be written now.
-        &["ability.offense", "disc.regular", "disc.burn", "aa.burn", "mend", "fd"]
+        &["ability.offense", "disc.regular", "aura", "disc.burn", "aa.burn", "mend", "fd"]
+    }
+
+    fn rest(&mut self, config: &Config, _state: &State, game: &dyn Game) -> Option<Action> {
+        keep_aura(config, game)
     }
 
     fn fight(&mut self, config: &Config, _state: &State, game: &dyn Game) -> Option<Action> {
@@ -28,8 +32,11 @@ mod tests {
     use super::*;
     use crate::Layer;
 
+    #[derive(Default)]
     struct FakeGame {
         ready: Vec<&'static str>,
+        known: Vec<&'static str>,
+        auras: Vec<&'static str>,
         in_range: bool,
         buffs: Vec<(&'static str, Duration)>,
     }
@@ -40,6 +47,12 @@ mod tests {
         }
         fn disc_ready(&self, name: &str) -> bool {
             self.ready.contains(&name)
+        }
+        fn disc_known(&self, name: &str) -> bool {
+            self.known.contains(&name)
+        }
+        fn aura_active(&self, name: &str) -> bool {
+            self.auras.contains(&name)
         }
         fn disc_buff_left(&self, name: &str) -> Option<Duration> {
             self.buffs.iter().find(|(buff, _)| *buff == name).map(|(_, left)| *left)
@@ -54,6 +67,7 @@ mod tests {
         let sections = vec![
             ("ability.offense".to_owned(), numbered(&["Flying Kick", "Tiger Claw"])),
             ("disc.regular".to_owned(), numbered(&["Thunderkick", "Ashenhand Discipline"])),
+            ("aura".to_owned(), numbered(&["Master's Aura", "Disciple's Aura"])),
         ];
         Config::from_layers(&[Layer { name: "Monk.ini".into(), sections }]).0
     }
@@ -64,7 +78,20 @@ mod tests {
 
     fn fight_buffed(ready: &[&'static str], in_range: bool, buffs: &[(&'static str, Duration)]) -> Option<Action> {
         let config = config();
-        Monk.fight(&config, &State::new(&config), &FakeGame { ready: ready.to_vec(), in_range, buffs: buffs.to_vec() })
+        Monk.fight(&config, &State::new(&config), &FakeGame { ready: ready.to_vec(), in_range, buffs: buffs.to_vec(), ..FakeGame::default() })
+    }
+
+    #[test]
+    fn keeps_the_best_aura_it_has_up_out_of_combat() {
+        let config = config();
+        let mut rest = |game: FakeGame| Monk.rest(&config, &State::new(&config), &game);
+        let disciple = || Some(Action::Disc("Disciple's Aura".into()));
+        assert_eq!(rest(FakeGame { known: vec!["Disciple's Aura"], ready: vec!["Disciple's Aura"], ..FakeGame::default() }), disciple());
+        assert_eq!(rest(FakeGame { known: vec!["Disciple's Aura"], ready: vec!["Disciple's Aura"], auras: vec!["Disciple's Aura"], ..FakeGame::default() }), None, "already up");
+        assert_eq!(rest(FakeGame { known: vec!["Disciple's Aura"], ..FakeGame::default() }), None, "not ready");
+        let master = FakeGame { known: vec!["Master's Aura", "Disciple's Aura"], ready: vec!["Master's Aura", "Disciple's Aura"], auras: vec!["Disciple's Aura"], ..FakeGame::default() };
+        assert_eq!(rest(master), Some(Action::Disc("Master's Aura".into())), "the best one replaces a lesser");
+        assert_eq!(rest(FakeGame::default()), None);
     }
 
     #[test]

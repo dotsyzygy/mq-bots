@@ -24,16 +24,16 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "mq-emu"
-version = "0.1.8"
-source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.1.8#c78c07f1eafdab700d639cf2966870dee017161b"
+version = "0.1.9"
+source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.1.9#c244d93531c4a4894e16d997afa37dd51aa82c6e"
 dependencies = [
  "mq-emu-sys",
 ]
 
 [[package]]
 name = "mq-emu-sys"
-version = "0.1.8"
-source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.1.8#c78c07f1eafdab700d639cf2966870dee017161b"
+version = "0.1.9"
+source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.1.9#c244d93531c4a4894e16d997afa37dd51aa82c6e"
 dependencies = [
  "cc",
 ]
