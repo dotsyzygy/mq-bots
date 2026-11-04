@@ -95,7 +95,12 @@ impl Bots {
             }
             // Commands keep what they set; only the INI's values change.
             Command::Reload if self.loaded_for.is_empty() => mq.chat(yellow!("[Bots] nothing to reload until a character is in game")),
-            Command::Reload => self.load(mq),
+            Command::Reload => {
+                self.load(mq);
+                if let Some(class) = &self.class {
+                    self.check_archetypes(mq, class.archetypes());
+                }
+            }
         }
     }
 
@@ -117,8 +122,9 @@ impl Bots {
     fn come_in(&mut self, mq: &Mq<Self>, character: &str) {
         let class = mq.me().and_then(|me| mq.class_name(me.class())).unwrap_or_default();
         self.class = for_class(&class);
-        if self.class.is_none() {
-            mq.chat(yellow!("[Bots] {class} doesn't fight yet"));
+        match &self.class {
+            None => mq.chat(yellow!("[Bots] {class} isn't implemented yet")),
+            Some(module) => self.check_archetypes(mq, module.archetypes()),
         }
         self.posse = match posse::PosseLink::open(mq, character) {
             Ok(Some(link)) => Some(link),
@@ -131,6 +137,13 @@ impl Bots {
                 None
             }
         };
+    }
+
+    /// Says which INI sections the class doesn't read: most likely misspelled.
+    fn check_archetypes(&self, mq: &Mq<Self>, known: &[&str]) {
+        for name in self.config.unknown_archetypes(known) {
+            mq.chat(yellow!("[Bots] [{name}] isn't an archetype this class reads: {}", known.join(", ")));
+        }
     }
 
     /// Reads the class's INI and then the character's, saying in chat what

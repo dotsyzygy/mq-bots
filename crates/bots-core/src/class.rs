@@ -1,9 +1,15 @@
 //! What each class does in a fight, against the game as a [`Game`] so it's
 //! tested without one.
 
+use std::time::Duration;
+
 use crate::{Config, State};
 
 mod monk;
+
+/// A buff a combat ability gives you is used again only with this little
+/// left on it (Fists of Wu has no reuse timer, only its song).
+pub const REFRESH_BUFF_AT: Duration = Duration::from_secs(5);
 
 /// What a class asks the plugin to do, by the name the INI gave.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,11 +27,17 @@ pub trait Game {
     /// A combat ability you have that the game would take now: ready, with
     /// the endurance for it, and no discipline running if it's one.
     fn disc_ready(&self, name: &str) -> bool;
+    /// Time left on the buff or song a combat ability gave you; `None` if
+    /// it isn't on you or doesn't wear off.
+    fn disc_buff_left(&self, name: &str) -> Option<Duration>;
     /// Close enough to the engaged mob to hit it.
     fn in_melee_range(&self) -> bool;
 }
 
 pub trait Class {
+    /// The INI sections it reads, for saying which others it doesn't.
+    fn archetypes(&self) -> &'static [&'static str];
+
     /// The next thing to do against [`State::engaged`], if anything.
     fn fight(&mut self, config: &Config, state: &State, game: &dyn Game) -> Option<Action>;
 }
@@ -37,6 +49,11 @@ pub fn for_class(name: &str) -> Option<Box<dyn Class>> {
         "monk" => Some(Box::new(monk::Monk)),
         _ => None,
     }
+}
+
+/// A combat ability to use now: ready, and not still buffing you.
+pub fn disc_usable(game: &dyn Game, name: &str) -> bool {
+    game.disc_ready(name) && game.disc_buff_left(name).is_none_or(|left| left <= REFRESH_BUFF_AT)
 }
 
 /// Whether an INI entry names the game's ability or spell `game`: the same,

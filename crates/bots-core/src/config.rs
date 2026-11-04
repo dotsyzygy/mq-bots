@@ -73,6 +73,11 @@ impl Config {
         self.archetypes.get(&name.to_ascii_lowercase()).map_or(&[], Vec::as_slice)
     }
 
+    /// Sections that aren't among `known` (a class's archetypes), as read.
+    pub fn unknown_archetypes(&self, known: &[&str]) -> Vec<&str> {
+        self.archetypes.keys().map(String::as_str).filter(|name| !known.iter().any(|k| k.eq_ignore_ascii_case(name))).collect()
+    }
+
     /// Every archetype with its entries, by name.
     pub fn archetypes(&self) -> impl Iterator<Item = (&str, &[String])> {
         self.archetypes.iter().map(|(name, entries)| (name.as_str(), entries.as_slice()))
@@ -151,6 +156,13 @@ mod tests {
         assert_eq!(config.archetype("ability.offense"), ["Kick"]);
         assert_eq!(config.archetype("mend"), ["Mend"]);
         assert_eq!(config.archetypes().map(|(name, _)| name).collect::<Vec<_>>(), ["ability.offense", "mend"]);
+    }
+
+    #[test]
+    fn says_which_sections_a_class_doesnt_read() {
+        let monk = layer("Monk.ini", &[("ability.offensive", &[("1", "Flying Kick")]), ("Disc.Regular", &[("1", "Thunderkick")])]);
+        let (config, _) = Config::from_layers(&[monk]);
+        assert_eq!(config.unknown_archetypes(&["ability.offense", "disc.regular"]), ["ability.offensive"]);
     }
 
     #[test]

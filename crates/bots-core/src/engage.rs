@@ -8,8 +8,9 @@ pub struct Mob {
     pub id: u32,
     pub is_npc: bool,
     pub hp_percent: i32,
-    /// From the Main Assist, who holds the camp.
-    pub distance_to_ma: f32,
+    /// From this bot. Until a camp spot can be set, the bots are wherever
+    /// the MA is, so a mob the MA is still pulling is out of reach.
+    pub distance: f32,
 }
 
 /// What the plugin saw this pulse.
@@ -54,17 +55,17 @@ pub fn decide(state: &mut State, config: &Config, seen: &Seen) -> Decision {
     }
 }
 
-/// An NPC worn down to assist-at, within the camp.
+/// An NPC worn down to assist-at, within the camp radius.
 fn qualifies(mob: &Mob, config: &Config) -> bool {
-    mob.is_npc && mob.hp_percent > 0 && mob.hp_percent <= i32::from(config.assist_at) && mob.distance_to_ma <= config.camp_radius
+    mob.is_npc && mob.hp_percent > 0 && mob.hp_percent <= i32::from(config.assist_at) && mob.distance <= config.camp_radius
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn mob(id: u32, hp_percent: i32, distance_to_ma: f32) -> Mob {
-        Mob { id, is_npc: true, hp_percent, distance_to_ma }
+    fn mob(id: u32, hp_percent: i32, distance: f32) -> Mob {
+        Mob { id, is_npc: true, hp_percent, distance }
     }
 
     fn assisting() -> State {

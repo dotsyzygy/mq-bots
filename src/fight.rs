@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use bots_core::{Action, Decision, Game, Mob, Seen, decide, same_name};
-use mq_emu::{GroupRole, Mq, Spawn, SpawnId, yellow};
+use mq_emu::{GroupRole, Mq, Spawn, SpawnId, green, yellow};
 
 use crate::Bots;
 
@@ -33,22 +33,23 @@ impl Bots {
         let ma_target = ma.as_ref().and_then(|ma| {
             let status = self.posse.as_mut()?.status(&ma.name())?;
             let target = mq.spawn(SpawnId(status.target_id)).filter(|_| status.target_id != 0)?;
-            Some(mob(&target, ma))
+            // The MA has it targeted, so its client has the HP from the
+            // server; this one's copy of a mob it hasn't targeted lags.
+            Some(Mob { hp_percent: status.target_hp_percent, ..mob(&target, &me) })
         });
-        let engaged = self.state.engaged.and_then(|id| mq.spawn(SpawnId(id))).map(|spawn| match &ma {
-            Some(ma) => mob(&spawn, ma),
-            None => Mob { distance_to_ma: 0.0, ..mob(&spawn, &spawn) },
-        });
+        let engaged = self.state.engaged.and_then(|id| mq.spawn(SpawnId(id))).map(|spawn| mob(&spawn, &me));
         match decide(&mut self.state, &self.config, &Seen { ma_target, engaged }) {
             Decision::Idle => {}
-            Decision::Engage(id) => self.engage(mq, id),
+            Decision::Engage(id) => self.engage(mq, &me, id, ma_target.filter(|mob| mob.id == id).map_or(0, |mob| mob.hp_percent)),
             Decision::Fight => self.attack(mq, &me),
             Decision::Disengage => self.disengage(mq),
         }
     }
 
-    fn engage(&mut self, mq: &Mq<Self>, id: u32) {
+    /// `hp_percent` as the MA sees it, to say in chat.
+    fn engage(&mut self, mq: &Mq<Self>, me: &Spawn<'_>, id: u32, hp_percent: i32) {
         let Some(target) = mq.spawn(SpawnId(id)) else { return };
+        mq.chat(green!("[Bots] engaging {} ({hp_percent}% HP to the MA, {}% here, {:.0} away)", target.name(), target.hp_percent(), me.distance_to(&target)));
         self.state.engaged = Some(id);
         mq.set_target(Some(&target));
         if mq.is_plugin_loaded(MOVEUTILS) {
@@ -114,8 +115,8 @@ fn main_assist<'a>(mq: &'a Mq<Bots>) -> Option<Spawn<'a>> {
     mq.group()?.with_role(GroupRole::MainAssist)?.spawn()
 }
 
-fn mob(spawn: &Spawn<'_>, ma: &Spawn<'_>) -> Mob {
-    Mob { id: spawn.id().0, is_npc: spawn.is_npc(), hp_percent: spawn.hp_percent(), distance_to_ma: spawn.distance_to(ma) }
+fn mob(spawn: &Spawn<'_>, me: &Spawn<'_>) -> Mob {
+    Mob { id: spawn.id().0, is_npc: spawn.is_npc(), hp_percent: spawn.hp_percent(), distance: spawn.distance_to(me) }
 }
 
 /// The game as the class sees it, against the target.
@@ -133,9 +134,17 @@ impl Game for Seeing<'_> {
         let Some(ability) = self.mq.combat_abilities().find(|ability| same_name(name, &ability.name())) else { return false };
         let spell = ability.spell();
         let affordable = self.mq.endurance_current().is_some_and(|endurance| endurance >= spell.endurance_cost());
-        // Only one discipline with a duration runs at a time.
-        let blocked = spell.duration_cap() > 0 && self.mq.active_disc().is_some();
+        // One discipline runs at a time; abilities whose buff goes in the
+        // song window (Fists of Wu) don't take its place.
+        let blocked = spell.duration_cap() > 0 && !spell.is_short_duration() && self.mq.active_disc().is_some();
         ability.is_ready() && affordable && !blocked
+    }
+
+    fn disc_buff_left(&self, name: &str) -> Option<Duration> {
+        let ability = self.mq.combat_abilities().find(|ability| same_name(name, &ability.name()))?;
+        // Its own spell, or else a buff by the INI's name.
+        let buff = self.mq.buff(ability.id()).or_else(|| self.mq.buffs().chain(self.mq.songs()).find(|buff| same_name(name, &buff.name())));
+        buff?.remaining()
     }
 
     fn in_melee_range(&self) -> bool {

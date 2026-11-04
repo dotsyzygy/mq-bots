@@ -45,10 +45,10 @@ Monk archetypes for the MVP (names may change while building):
 
 Engaging is automatic off the MA, with commands that override it.
 
-- **Assist:** a bot in `assist` mode engages the MA's target when it is an NPC, at or below the assist-at HP%, and within the camp radius of the MA. It sticks behind the target (MQ2MoveUtils `/stick behind`) and turns on attack.
+- **Assist:** a bot in `assist` mode engages the MA's target when it is an NPC, at or below the assist-at HP%, and within the camp radius. It sticks behind the target (MQ2MoveUtils `/stick behind`) and turns on attack.
 - **Regular vs burn:** in regular phase the bot uses `ability.offense` and `disc.regular`. `/bots burn` starts a burn phase: `disc.burn` and `aa.burn` are used in priority order. The burn lasts until the current combat is over (no group member is attacking and the extended target list has no haters) and then turns itself off; `/bots burn off` ends it early. Auto-burn conditions (named mob, target count) come later.
 - **Backoff:** `/bots backoff` drops the target, turns attack off and stops auto-engaging until `/bots resume`.
-- **Camp:** for now the camp is wherever the MA is, so the bots just follow the MA. Later, `deploy` and `packup` commands set and clear a static spot to camp at, and the camp radius is measured from there while deployed.
+- **Camp:** for now the camp is wherever the MA is, so the bots just follow the MA, and the camp radius is measured from the bot itself: a mob the MA is still pulling is left alone until it's brought in. Later, `deploy` and `packup` commands set and clear a static spot to camp at, and the camp radius is measured from there while deployed.
 - **Feigning:** while feigned, a bot does nothing else. It still checks that it's feigning whenever FD still applies (aggro, low HP), and feigns again if something knocked it out, since AoE spells and the like sometimes do.
 - **Out of combat:** follow the driver (MQ2AdvPath `/afollow`), with an on/off switch.
 
@@ -70,7 +70,7 @@ Sent to every bot with `/pc` through Posse.
 ## Posse
 
 - Bots read Posse's shared memory through `posse-core` directly (typed, no string parsing, no passthrough lag). The `${Posse}` TLO stays for macros and Lua.
-- Live status fields are added only when a bot needs them, and each needs an mq-emu getter first. Monk MVP needs from the MA: target ID, auto attack (the `COMBAT` flag), position. From each member: HP%, target ID. All are already published.
+- Live status fields are added only when a bot needs them, and each needs an mq-emu getter first. Monk MVP needs from the MA: target ID, target HP% (`target_hp_percent`, added for milestone 4: a bot's own copy of a mob it hasn't targeted lags behind the server's), auto attack (the `COMBAT` flag), position. From each member: HP%, target ID. All are already published.
 - Bots compute a "ready" flag (not medding, resources above threshold, not dead) and publish it through Posse for later pulling logic.
 
 ## Out of scope for the MVP
@@ -85,7 +85,7 @@ Sent to every bot with `/pc` through Posse.
 1. ~~Fill the mq-emu gaps for monk (see API gaps) and release mq-emu.~~ Done in mq-emu 0.1.6.
 2. ~~Confirm Posse's `COMBAT` flag meaning; no new Posse fields expected for the monk.~~ Done: it's auto attack (`${Me.Combat}`), which is what "attacking" means in the combat flow.
 3. ~~Scaffold the workspace, `/bots` commands and INI loading.~~ Done. `bots-core` holds what doesn't touch the game (command parsing, config layering, the bot's state) and is tested off-game, like `posse-core`; the plugin crate does the game access. Commands set state only; acting on it starts in milestone 4.
-4. Monk: assist, stick, attack, abilities and regular discs. Built; to test in game. `bots-core` decides what to engage (`engage.rs`) and what the monk uses (`class/monk.rs`, against a `Game` trait the plugin implements), so both are tested off-game. The camp is the MA: a mob qualifies within `CampRadius` of the MA. mq-emu 0.1.7 added what this needed: `set_auto_attack` and `melee_range` (`${Target.MaxRangeTo}`, so abilities wait until in range). posse-core now holds MQ2Posse's settings names and `auto_join_posse`, so the bots find the same posse Posse joins. Disengaging on `/bots backoff` came with it, so milestone 6 leaves following and the group test.
+4. Monk: assist, stick, attack, abilities and regular discs. Built; to test in game. `bots-core` decides what to engage (`engage.rs`) and what the monk uses (`class/monk.rs`, against a `Game` trait the plugin implements), so both are tested off-game. The camp radius is measured from the bot, so a mob being pulled waits until it's brought in. mq-emu 0.1.7 added what this needed: `set_auto_attack` and `melee_range` (`${Target.MaxRangeTo}`, so abilities wait until in range). posse-core now holds MQ2Posse's settings names and `auto_join_posse`, so the bots find the same posse Posse joins. Disengaging on `/bots backoff` came with it, so milestone 6 leaves following and the group test.
 5. Burn phase, Mend, Feign Death (including feigning again when knocked out of it while FD still applies).
 6. Follow and backoff. Test in a group of 4.
 
@@ -108,4 +108,4 @@ Missing from mq-emu, to bind before the monk (milestone 1):
 
 Later, for casters: cast-result tracking (mq-emu has chat events and `Spawn::casting` polling, but no API that reports a cast's outcome).
 
-Posse needs nothing new for the monk. Its live status already has `target_id`, `hp_percent`, position, and `COMBAT` and `FEIGNING` flags; the bot reads the MA's target's HP% from the spawn locally. The ready flag comes later. The bots read it with `posse_shm::Mapping::open` and `posse_core::Roster` (`refresh`, `read` by name), linked as path dependencies, since both crates are `publish = false`. The `COMBAT` flag is auto attack (`${Me.Combat}`), published from mq-emu's `in_combat`, not the combat state; if a bot needs a member's combat state, that's a new Posse field.
+Posse needed one new field for the monk, `target_hp_percent` (layout 5): a bot's client had a pulled mob at 95% while the MA's showed it higher, so the MA's view is used. Its live status already had `target_id`, `hp_percent`, position, and `COMBAT` and `FEIGNING` flags; the bot no longer reads the MA's target's HP% from the spawn locally. The ready flag comes later. The bots read it with `posse_shm::Mapping::open` and `posse_core::Roster` (`refresh`, `read` by name), linked as path dependencies, since both crates are `publish = false`. The `COMBAT` flag is auto attack (`${Me.Combat}`), published from mq-emu's `in_combat`, not the combat state; if a bot needs a member's combat state, that's a new Posse field.

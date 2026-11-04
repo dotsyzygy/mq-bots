@@ -34,9 +34,9 @@ Send them to every bot with `/pc` through Posse.
 
 ## Assisting
 
-The Main Assist is whoever has the group's Main Assist role. Each bot reads the MA's target from Posse, so the MA's client must be in the same posse. In `assist` mode, a bot engages that target when it's an NPC at or below `AssistAt`% HP and within `CampRadius` of the MA, and switches when the MA moves on to another that qualifies. Engaging targets the mob, runs `/stick behind` and turns auto attack on. When the mob dies or leaves, or on `/bots backoff` or `mode off`, the bot turns attack off, stops sticking and clears its target.
+The Main Assist is whoever has the group's Main Assist role. Each bot reads the MA's target from Posse, so the MA's client must be in the same posse. In `assist` mode, a bot engages that target when it's an NPC at or below `AssistAt`% HP and within `CampRadius` of the bot (so a mob the MA is still pulling is left alone until it's brought in), and switches when the MA moves on to another that qualifies. Engaging targets the mob, runs `/stick behind` and turns auto attack on. When the mob dies or leaves, or on `/bots backoff` or `mode off`, the bot turns attack off, stops sticking and clears its target.
 
-In melee range, the monk uses the first ready ability in `ability.offense`, or else the first ready disc in `disc.regular` that it has the endurance for (and, if the disc has a duration, only while no other is running). Names match with or without the game's rank (`Rk. II`).
+In melee range, the monk uses the first ready ability in `ability.offense`, or else the first ready disc in `disc.regular` that it has the endurance for. A disc that puts a buff or song on the monk (Fists of Wu) waits until 5 seconds or less are left on it, and a disc with a long duration waits while another runs. Names match with or without the game's rank (`Rk. II`).
 
 ## Config
 
@@ -63,7 +63,7 @@ Follow=off
 1=Thunderkick
 ```
 
-Monk archetypes: `ability.offense`, `disc.regular`, `disc.burn`, `aa.burn`, `mend`, `fd` (see the plan).
+Monk archetypes: `ability.offense`, `disc.regular`, `disc.burn`, `aa.burn`, `mend`, `fd` (see the plan). A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
 
 ## License
 
