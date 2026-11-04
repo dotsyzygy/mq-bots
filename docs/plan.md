@@ -132,7 +132,7 @@ Later: long-duration buffs, canni and medding, the shaman's own pet.
 
 Shaman milestones, started before monk milestone 5:
 
-- S1. mq-emu: the safe cast API (see API gaps), then release. Posse: pets' buffs.
+- S1. ~~mq-emu: the safe cast API (see API gaps), then release. Posse: pets' buffs.~~ Done: mq-emu 0.1.10 (`Task::cast`, `Task::memorize`, `CastResult::completed`, `Task::watch_messages`, `cast_time_left`, through `eqclient.dll`, which `cargo mq deploy` ships next to the plugin) and MQ2Posse 0.1.1 (`pet_buffs`, layout 6). Tried in game: a buff cast lands exactly when `Task::cast` says, a stronger buff already on gives `DidNotTakeHold`, and a stopped cast's late messages don't count against the next one.
 - S2. Casting in `bots-core` (a `Cast` action, gem and cast state in `Game`) and memorizing `[Gems]` out of combat.
 - S3. Heals: emergency heals, group HoT, tank HoT, stopping a non-heal cast for a heal.
 - S4. Melee buffs on members and pets.
@@ -156,17 +156,17 @@ Missing from mq-emu, to bind before the monk (milestone 1):
 | Small helpers | done in mq-emu 0.1.6 (`endurance_percent`, `Spawn::is_standing`) | |
 | Is a plugin loaded | done in mq-emu 0.1.6 (`is_plugin_loaded`, by any name `GetPlugin` takes) | |
 
-For the shaman (S1): a safe cast API in mq-emu. mq-emu has chat events and `Spawn::casting` polling, but nothing that reports how a cast ended; MacroQuest itself has none either, and MQ2Cast reads outcomes from chat messages. It goes into mq-emu, not a separate plugin: a plugin like MQ2Cast is driven by commands and read back through a TLO string, the lag and parsing the bots avoid by reading Posse directly, and only the bot casts for its character, so a shared queue isn't needed.
+For the shaman (S1): a safe cast API in mq-emu. mq-emu has `Spawn::casting` polling, but nothing that reports how a cast ended; MacroQuest itself has none either, and MQ2Cast reads outcomes from chat text, which is unreliable and not used here. Instead the new `eq-client` crate hooks the client's `StringTable::getString` from a shared `eqclient.dll`, so mq-emu sees the client's messages by eqstr_us.txt ID (fizzle 173, resist 425, interrupt 439...), whether the server or the client itself shows them. It goes into mq-emu, not a separate plugin: a plugin like MQ2Cast is driven by commands and read back through a TLO string, the lag and parsing the bots avoid by reading Posse directly, and only the bot casts for its character, so a shared queue isn't needed.
 
 The split: mq-emu does how to cast; the bots decide what and when (thresholds, priorities, resist counting, `[Gems]`).
 
 - `mq.cast(spell, target)` is an async task that always ends with a result: landed, resisted, interrupted, fizzled, out of range, no line of sight, not enough mana, not memorized, or timed out.
 - It checks first, without touching the game: spell known and in a gem, gem ready, mana, target exists, is alive and in range; not already casting, stunned or feigning. A failed check returns its reason.
 - It does the routine steps: stands if sitting, targets the spell's target (optionally going back to the previous one), casts from the gem.
-- It always finishes: it tracks the cast through the casting state and the chat messages (fizzle, interrupt, resist, can't see target), with a timeout so a lost message can't hang a bot.
+- It always finishes: it tracks the cast through the casting state and the client's messages by ID (fizzle, interrupt, resist, can't see target), with a timeout so a lost message can't hang a bot.
 - Cancelling the task stops the cast, which is what an emergency heal needs.
 - Memorizing gets the same shape: a task that ends once the spell is in its gem and ready.
 
-Before designing the signature: check how mq-emu's chat events and async tasks fit together, so a cast task can wait on chat messages without the plugin wiring it up, and which messages MQ2Cast matches for each outcome. Everything else the shaman needs is bound: casting from a gem, gem readiness, memorizing, stopping a cast, mana, target and pet buffs with casters, `knows_spell` and `spell_level`.
+Done in mq-emu 0.1.10: `task.cast(Cast::new(spell).on(spawn))` ends with a `CastResult`, `task.memorize(gem, spell)` with a `MemorizeResult`, and `task.watch_messages(&ids)` gives any task the client's messages by ID. Everything else the shaman needs is bound: casting from a gem, gem readiness, memorizing, stopping a cast, mana, target and pet buffs with casters, `knows_spell` and `spell_level`.
 
 Posse needed one new field for the monk, `target_hp_percent` (layout 5): a bot's client had a pulled mob at 95% while the MA's showed it higher, so the MA's view is used. Its live status already had `target_id`, `hp_percent`, position, and `COMBAT` and `FEIGNING` flags; the bot no longer reads the MA's target's HP% from the spawn locally. The ready flag comes later. The bots read it with `posse_shm::Mapping::open` and `posse_core::Roster` (`refresh`, `read` by name), linked as path dependencies, since both crates are `publish = false`. The `COMBAT` flag is auto attack (`${Me.Combat}`), published from mq-emu's `in_combat`, not the combat state; if a bot needs a member's combat state, that's a new Posse field.
