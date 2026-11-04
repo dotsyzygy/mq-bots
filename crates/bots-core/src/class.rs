@@ -24,6 +24,19 @@ pub enum Action {
     Cast { spell: String, target: Option<u32> },
     /// A spell from your book into a gem, numbered from 1 as `/cast` does.
     Memorize { gem: usize, spell: String },
+    /// Stops the bot's cast, for a heal.
+    StopCast,
+}
+
+/// A group member in the zone and alive, as a class sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Member {
+    pub id: u32,
+    pub hp_percent: i32,
+    /// Holds the `MainTank` role, or is the Main Assist if no one does.
+    pub tank: bool,
+    /// Auto attack is on.
+    pub fighting: bool,
 }
 
 /// The game as a class sees it, with names as the INI gives them.
@@ -57,6 +70,18 @@ pub trait Game {
     fn spell_ready(&self, name: &str) -> bool;
     /// A cast or memorizing under way, the bot's or one by hand.
     fn casting(&self) -> bool;
+    /// The spell of the bot's cast under way, by the INI's name.
+    fn bot_casting(&self) -> Option<String>;
+    /// The group's members in the zone and alive, you included; just you
+    /// out of a group.
+    fn members(&self) -> Vec<Member>;
+    /// Time left on a spell, by the INI's name, on a member; `None` if it
+    /// isn't on it. A member whose buffs aren't seen has every one, so
+    /// nothing is cast on it over and over.
+    fn buff_left(&self, member: u32, spell: &str) -> Option<Duration>;
+    /// A member close enough for a memorized spell, by the INI's name, to
+    /// reach (its range, or a group spell's AE range).
+    fn in_range(&self, spell: &str, member: u32) -> bool;
 }
 
 pub trait Class {
@@ -72,6 +97,12 @@ pub trait Class {
     /// Whether it sticks to the mob it engages and turns on attack.
     fn melee(&self) -> bool {
         true
+    }
+
+    /// What comes before fighting or resting, in a fight or out (heals),
+    /// if anything.
+    fn urgent(&mut self, _config: &Config, _state: &State, _game: &dyn Game) -> Option<Action> {
+        None
     }
 
     /// The next thing to do against [`State::engaged`], if anything.
@@ -126,6 +157,12 @@ pub fn spells_used<'a>(config: &'a Config, spells: Spells, game: &dyn Game, skip
         used.push(name);
     }
     used
+}
+
+/// The best spell of an archetype that's memorized: the one [`plan_gems`]
+/// keeps, or the next best if that one wouldn't memorize.
+pub fn best_memorized<'a>(config: &'a Config, archetype: &str, game: &dyn Game) -> Option<&'a str> {
+    config.archetype(archetype).iter().find(|name| game.spell_gem(name).is_some()).map(String::as_str)
 }
 
 /// Which spells to keep memorized, and the next one to memorize.
@@ -213,6 +250,12 @@ pub(crate) struct FakeGame {
     pub gems: Vec<(usize, &'static str)>,
     pub gem_count: usize,
     pub casting: bool,
+    pub bot_casting: Option<&'static str>,
+    pub members: Vec<Member>,
+    /// Spells on members, by member ID.
+    pub member_buffs: Vec<(u32, &'static str)>,
+    /// Members out of every spell's range.
+    pub out_of_range: Vec<u32>,
 }
 
 #[cfg(test)]
@@ -251,7 +294,19 @@ impl Game for FakeGame {
         self.spell_gem(name).is_some() && self.ready.contains(&name)
     }
     fn casting(&self) -> bool {
-        self.casting
+        self.casting || self.bot_casting.is_some()
+    }
+    fn bot_casting(&self) -> Option<String> {
+        self.bot_casting.map(str::to_owned)
+    }
+    fn members(&self) -> Vec<Member> {
+        self.members.clone()
+    }
+    fn buff_left(&self, member: u32, spell: &str) -> Option<Duration> {
+        self.member_buffs.contains(&(member, spell)).then_some(Duration::from_secs(12))
+    }
+    fn in_range(&self, _spell: &str, member: u32) -> bool {
+        !self.out_of_range.contains(&member)
     }
 }
 

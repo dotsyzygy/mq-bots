@@ -52,6 +52,14 @@ AssistAt=95
 CampRadius=100
 ; Start following the driver (default off)
 Follow=off
+; Healers: heal the tank below this HP% (default 70)
+HealAt=70
+; Healers: heal anyone else below this HP% (default 50)
+EmergencyAt=50
+; Healers: the group HoT when GroupHotCount members (default 2) are below
+; GroupHotAt% HP (default 85) without it
+GroupHotAt=85
+GroupHotCount=2
 
 ; Every other section is an archetype: numbered entries, best first.
 ; The bot uses the first one the character has and can use.
@@ -63,7 +71,7 @@ Follow=off
 1=Thunderkick
 ```
 
-Each class's archetypes, what goes in them and which are used yet: [docs/archetypes.md](docs/archetypes.md). The shaman doesn't melee, and so far only memorizes its spells. A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
+Each class's archetypes, what goes in them and which are used yet: [docs/archetypes.md](docs/archetypes.md). The shaman doesn't melee. So far it memorizes its spells and, in mode `assist`, heals, in a fight or out, only members its spell reaches: the lowest of the tank below `HealAt` and anyone else below `EmergencyAt` (stopping its own cast for it unless that's a heal), then the group HoT, then the HoT on the tank while it's attacking. The tank is whoever has the Main Tank role, or else the MA. HP and buffs come from Posse, so members who aren't in the posse get emergency heals but no HoTs. A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
 
 A caster memorizes its spells itself, out of combat, after loading and after `/bots reload`: for each spell archetype, the best spell in the spell book that's castable at the character's level, so one INI works at every level, and for `debuff` and `dot`, the best of each kind (one slow, one malo...; see [docs/archetypes.md](docs/archetypes.md)). Each gets a gem. A spell already memorized stays in its gem; the others go into gems holding nothing the bot uses. With more spells than gems, the class's most important ones get gems, and chat says which were left out. A spell the game won't memorize is reported, and the next best is used until `/bots reload`.
 

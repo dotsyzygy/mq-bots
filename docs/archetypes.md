@@ -33,9 +33,9 @@ Listed most important first. The shaman keeps memorized what it uses of each, on
 
 | Archetype | What goes in it | Used yet? |
 |---|---|---|
-| `heal` | Single-target heal | Memorized; cast from S3 |
-| `heal.hot` | Single-target heal over time, kept on the tank | Memorized; cast from S3 |
-| `heal.group.hot` | Group heal over time | Memorized; cast from S3 |
+| `heal` | Single-target heal | Cast |
+| `heal.hot` | Single-target heal over time, kept on the tank | Cast |
+| `heal.group.hot` | Group heal over time | Cast |
 | `buff.melee` | Short melee buffs (Spirit of the Panther), on melee and pets in combat | Memorized; cast from S4 |
 | `debuff` | Slows, malos, cripples..., *each kind*, kept on the mob in list order | Memorized; cast from S5 |
 | `dot` | DoTs, *each kind* (poison, disease), the same way | Memorized; cast from S5 |

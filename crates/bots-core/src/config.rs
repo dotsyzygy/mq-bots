@@ -34,13 +34,31 @@ pub struct Config {
     pub assist_at: u8,
     /// Engage only within this distance of the camp (`CampRadius`).
     pub camp_radius: f32,
+    /// Heal the tank below this HP% (`HealAt`).
+    pub heal_at: u8,
+    /// Heal anyone else below this HP% (`EmergencyAt`).
+    pub emergency_at: u8,
+    /// Members below this HP% count toward a group HoT (`GroupHotAt`).
+    pub group_hot_at: u8,
+    /// How many members below `GroupHotAt` it takes (`GroupHotCount`).
+    pub group_hot_count: u8,
     /// By lowercase name, since INI sections ignore case.
     pub(crate) archetypes: BTreeMap<String, Vec<String>>,
 }
 
 impl Default for Config {
     fn default() -> Config {
-        Config { mode: Mode::Manual, follow: false, assist_at: 95, camp_radius: 100.0, archetypes: BTreeMap::new() }
+        Config {
+            mode: Mode::Manual,
+            follow: false,
+            assist_at: 95,
+            camp_radius: 100.0,
+            heal_at: 70,
+            emergency_at: 50,
+            group_hot_at: 85,
+            group_hot_count: 2,
+            archetypes: BTreeMap::new(),
+        }
     }
 }
 
@@ -84,10 +102,15 @@ impl Config {
     }
 
     fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
+        let percent = |field: &mut u8| value.parse().ok().filter(|percent| (1..=100).contains(percent)).map(|percent| *field = percent).ok_or("a percent from 1 to 100");
         let set = match key.to_ascii_lowercase().as_str() {
             "mode" => value.parse().map(|mode| self.mode = mode).map_err(|()| "off, manual or assist"),
             "follow" => switch(value).map(|on| self.follow = on).ok_or("on or off"),
-            "assistat" => value.parse().ok().filter(|percent| (1..=100).contains(percent)).map(|percent| self.assist_at = percent).ok_or("a percent from 1 to 100"),
+            "assistat" => percent(&mut self.assist_at),
+            "healat" => percent(&mut self.heal_at),
+            "emergencyat" => percent(&mut self.emergency_at),
+            "grouphotat" => percent(&mut self.group_hot_at),
+            "grouphotcount" => value.parse().ok().filter(|count| (1..=6).contains(count)).map(|count| self.group_hot_count = count).ok_or("a count from 1 to 6"),
             "campradius" => value.parse::<f32>().ok().filter(|radius| *radius > 0.0 && radius.is_finite()).map(|radius| self.camp_radius = radius).ok_or("a distance above 0"),
             _ => return Err(format!("{key} isn't a setting")),
         };
@@ -171,6 +194,12 @@ mod tests {
         let (config, problems) = Config::from_layers(&[settings]);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!((config.mode, config.follow, config.assist_at, config.camp_radius), (Mode::Off, true, 100, 60.5));
+        let heals = layer("Shaman.ini", &[("Settings", &[("HealAt", "75"), ("EmergencyAt", "40"), ("GroupHotAt", "90"), ("GroupHotCount", "3")])]);
+        let (config, problems) = Config::from_layers(&[heals]);
+        assert_eq!(problems, Vec::<String>::new());
+        assert_eq!((config.heal_at, config.emergency_at, config.group_hot_at, config.group_hot_count), (75, 40, 90, 3));
+        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("HealAt", "101"), ("GroupHotCount", "0")])])]);
+        assert_eq!(problems, ["Shaman.ini: [Settings] HealAt=101: a percent from 1 to 100", "Shaman.ini: [Settings] GroupHotCount=0: a count from 1 to 6"]);
     }
 
     #[test]

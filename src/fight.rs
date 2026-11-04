@@ -2,8 +2,10 @@
 
 use std::time::{Duration, Instant};
 
-use bots_core::{Action, Decision, Game, Mob, Mode, Seen, aura_named, decide, plan_gems, same_name};
+use bots_core::{Action, Decision, Game, Member, Mob, Mode, Seen, aura_named, decide, plan_gems, same_name};
 use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
+use posse_core::flags;
+use posse_shm::now_ms;
 
 use crate::Bots;
 
@@ -17,6 +19,9 @@ const ACTION_GAP: Duration = Duration::from_millis(500);
 const REST_GAP: Duration = Duration::from_secs(3);
 /// An aura used again this soon, with auras up, isn't being seen.
 const AURA_RETRY: Duration = Duration::from_secs(30);
+/// A spell that just landed on someone is taken as on them this long, until
+/// Posse shows it: no casting it twice.
+const LANDED_HOLD: Duration = Duration::from_secs(6);
 const MOVEUTILS: &str = "MQ2MoveUtils";
 
 #[derive(Default)]
@@ -30,6 +35,13 @@ pub struct Fight {
     pub given_up_auras: Vec<String>,
     /// The bot's cast or memorizing, while it runs.
     pub task: Option<TaskId>,
+    /// The spell, by the INI's name, of the bot's cast while it runs.
+    task_spell: Option<String>,
+    /// Spells that landed lately, by the INI's name, on a spawn (or the
+    /// group, for `None`), and when.
+    landed: Vec<(String, Option<u32>, Instant)>,
+    /// When the last action was taken.
+    last_action: Option<Instant>,
     /// Spells, by the INI's name, that wouldn't memorize; the next best is
     /// used until /bots reload.
     pub given_up_spells: Vec<String>,
@@ -55,7 +67,11 @@ impl Bots {
             Some(Mob { hp_percent: status.target_hp_percent, ..mob(&target, &me) })
         });
         let engaged = self.state.engaged.and_then(|id| mq.spawn(SpawnId(id))).map(|spawn| mob(&spawn, &me));
-        match decide(&mut self.state, &self.config, &Seen { ma_target, engaged }) {
+        let decision = decide(&mut self.state, &self.config, &Seen { ma_target, engaged });
+        if matches!(decision, Decision::Idle | Decision::Fight) && self.urgent(mq, &me) {
+            return;
+        }
+        match decision {
             Decision::Idle => self.rest(mq, &me),
             Decision::Engage(id) => self.engage(mq, &me, id, ma_target.filter(|mob| mob.id == id).map_or(0, |mob| mob.hp_percent)),
             Decision::Fight => self.attack(mq, &me),
@@ -84,6 +100,52 @@ impl Bots {
         mq.set_auto_attack(true);
     }
 
+    /// Heals, in a fight or out; whether something was done.
+    fn urgent(&mut self, mq: &Mq<Self>, me: &Spawn<'_>) -> bool {
+        if self.state.mode != Mode::Assist || me.is_feigning() || me.is_stunned() || self.fight.last_action.is_some_and(|at| at.elapsed() < ACTION_GAP) {
+            return false;
+        }
+        let group = self.group(mq, me);
+        let Some(class) = self.class.as_mut() else { return false };
+        let Some(action) = class.urgent(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, group)) else { return false };
+        self.act(mq, &action);
+        true
+    }
+
+    /// The group as the class sees it: members from the group window, their
+    /// HP and buffs from Posse when they're in it.
+    fn group(&mut self, mq: &Mq<Self>, me: &Spawn<'_>) -> Vec<Mate> {
+        let group = mq.group();
+        let tank = group.and_then(|group| group.with_role(GroupRole::MainTank).or_else(|| group.with_role(GroupRole::MainAssist))).map(|member| member.name());
+        let spawns: Vec<(String, Spawn<'_>)> = match group {
+            Some(group) => group.members().filter_map(|member| Some((member.name(), member.spawn()?))).collect(),
+            None => mq.spawn(me.id()).map(|spawn| (me.name(), spawn)).into_iter().collect(),
+        };
+        let mut mates = Vec::new();
+        for (name, spawn) in spawns {
+            if spawn.is_corpse() {
+                continue;
+            }
+            let tank = tank.as_ref().is_some_and(|tank| tank.eq_ignore_ascii_case(&name));
+            let id = spawn.id().0;
+            let (hp_percent, fighting, buffs) = if id == me.id().0 {
+                let mine = mq.buffs().chain(mq.songs()).filter_map(|buff| Some((buff.spell()?.id().0, buff.remaining().unwrap_or(Duration::MAX))));
+                (me.hp_percent(), mq.is_auto_attacking(), Some(mine.collect()))
+            } else if let Some(status) = self.posse.as_mut().and_then(|posse| posse.status(&name)).filter(|status| status.id == id) {
+                let age = status.age_ms(now_ms());
+                let left = |ms: Option<i64>| ms.map_or(Duration::MAX, |ms| Duration::from_millis(ms.max(0) as u64));
+                let buffs = status.buffs.iter().chain(&status.songs).filter(|buff| !buff.is_empty()).map(|buff| (buff.spell_id, left(buff.ms_left_after(age)))).filter(|(_, left)| !left.is_zero());
+                (status.hp_percent, status.has_flag(flags::COMBAT), Some(buffs.collect()))
+            } else {
+                (spawn.hp_percent(), false, None)
+            };
+            if hp_percent > 0 {
+                mates.push(Mate { member: Member { id, hp_percent, tank, fighting }, buffs });
+            }
+        }
+        mates
+    }
+
     fn melee(&self) -> bool {
         self.class.as_ref().is_some_and(|class| class.melee())
     }
@@ -108,7 +170,7 @@ impl Bots {
             return;
         }
         let Some(class) = self.class.as_mut() else { return };
-        let Some(action) = class.fight(&self.config, &self.state, &Seeing::new(mq, me, &self.fight.given_up_auras, self.fight.task.is_some())) else { return };
+        let Some(action) = class.fight(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, Vec::new())) else { return };
         self.act(mq, &action);
     }
 
@@ -123,15 +185,15 @@ impl Bots {
         if self.fight.next_action.is_some_and(|at| Instant::now() < at) {
             return;
         }
-        let seeing = Seeing::new(mq, me, &self.fight.given_up_auras, self.fight.task.is_some());
+        let seeing = Seeing::new(mq, me, &self.fight, Vec::new());
         let mut action = None;
+        let mut left_out = None;
         if self.state.memorize
             && let Some(class) = &self.class
         {
             let plan = plan_gems(&self.config, class.spells(), &seeing, &self.fight.given_up_spells);
-            if !plan.left_out.is_empty() && !std::mem::replace(&mut self.fight.said_left_out, true) {
-                let gems = seeing.gem_count();
-                mq.chat(yellow!("[Bots] {} spells to keep memorized but {gems} gems, so these are left out: {}", plan.wanted, plan.left_out.join(", ")));
+            if !plan.left_out.is_empty() && !self.fight.said_left_out {
+                left_out = Some((plan.wanted, seeing.gem_count(), plan.left_out.join(", ")));
             }
             self.state.memorize = plan.next.is_some();
             action = plan.next;
@@ -140,6 +202,10 @@ impl Bots {
             && let Some(class) = self.class.as_mut()
         {
             action = class.rest(&self.config, &self.state, &seeing);
+        }
+        if let Some((wanted, gems, spells)) = left_out {
+            mq.chat(yellow!("[Bots] {wanted} spells to keep memorized but {gems} gems, so these are left out: {spells}"));
+            self.fight.said_left_out = true;
         }
         let Some(action) = action else { return };
         if self.repeats_an_aura(mq, &action) {
@@ -182,8 +248,15 @@ impl Bots {
             }
             Action::Cast { spell, target } => self.cast(mq, spell, *target),
             Action::Memorize { gem, spell } => self.memorize(mq, *gem, spell),
+            Action::StopCast => {
+                if let Some(spell) = &self.fight.task_spell {
+                    mq.chat(yellow!("[Bots] stopping {spell} for a heal"));
+                }
+                self.stop_task(mq);
+            }
         }
         self.fight.next_action = Some(Instant::now() + ACTION_GAP);
+        self.fight.last_action = Some(Instant::now());
     }
 
     /// Casts as a task; one at a time.
@@ -197,15 +270,21 @@ impl Bots {
             cast = cast.on(SpawnId(target)).restoring_target();
         }
         let name = name.to_owned();
+        self.fight.task_spell = Some(name.clone());
         self.fight.task = Some(mq.spawn_task(move |task: Task<Bots>| async move {
             let result = task.cast(cast).await;
-            task.with_plugin(|bots, mq| bots.cast_ended(mq, &name, result));
+            task.with_plugin(|bots, mq| bots.cast_ended(mq, &name, target, result));
         }));
     }
 
     /// Says how a cast that didn't go off ended, once until another does.
-    fn cast_ended(&mut self, mq: &Mq<Self>, name: &str, result: CastResult) {
+    fn cast_ended(&mut self, mq: &Mq<Self>, name: &str, target: Option<u32>, result: CastResult) {
         self.fight.task = None;
+        self.fight.task_spell = None;
+        self.fight.landed.retain(|(_, _, at)| at.elapsed() < LANDED_HOLD);
+        if result.completed() {
+            self.fight.landed.push((name.to_owned(), target, Instant::now()));
+        }
         let failure = (!result.completed()).then(|| (name.to_owned(), result));
         if failure.is_some() && failure != self.fight.last_failure {
             mq.chat(yellow!("[Bots] {name}: {result}"));
@@ -241,6 +320,7 @@ impl Bots {
 
     /// Stops the bot's cast or memorizing, for a character leaving.
     pub fn stop_task(&mut self, mq: &Mq<Self>) {
+        self.fight.task_spell = None;
         if let Some(task) = self.fight.task.take() {
             mq.cancel_task(task);
         }
@@ -280,19 +360,26 @@ fn castable(mq: &Mq<Bots>, spell: &Spell<'_>, level: u8) -> bool {
     mq.spell_level(spell).is_some_and(|needed| needed <= level)
 }
 
+/// A group member as the class sees it.
+struct Mate {
+    member: Member,
+    /// Buffs and songs by spell ID, with time left (`Duration::MAX` for one
+    /// that doesn't run out); `None` if they aren't seen (not in Posse).
+    buffs: Option<Vec<(i32, Duration)>>,
+}
+
 /// The game as the class sees it, against the target.
 struct Seeing<'a> {
     mq: &'a Mq<Bots>,
     me: &'a Spawn<'a>,
-    /// Auras taken as up, since their name in the aura window isn't known.
-    given_up_auras: &'a [String],
-    /// The bot's cast or memorizing is running.
-    busy: bool,
+    /// Auras taken as up, the bot's cast, and spells landed lately.
+    fight: &'a Fight,
+    group: Vec<Mate>,
 }
 
 impl<'a> Seeing<'a> {
-    fn new(mq: &'a Mq<Bots>, me: &'a Spawn<'a>, given_up_auras: &'a [String], busy: bool) -> Seeing<'a> {
-        Seeing { mq, me, given_up_auras, busy }
+    fn new(mq: &'a Mq<Bots>, me: &'a Spawn<'a>, fight: &'a Fight, group: Vec<Mate>) -> Seeing<'a> {
+        Seeing { mq, me, fight, group }
     }
 }
 
@@ -327,7 +414,7 @@ impl Game for Seeing<'_> {
             names.push(ability.name());
             names.extend(self.mq.spell(SpellId(ability.id().0 + 1)).map(|spell| spell.name()));
         }
-        auras.iter().any(|aura| names.iter().any(|name| aura_named(name, &aura.name))) || self.given_up_auras.iter().any(|given_up| same_name(name, given_up))
+        auras.iter().any(|aura| names.iter().any(|name| aura_named(name, &aura.name))) || self.fight.given_up_auras.iter().any(|given_up| same_name(name, given_up))
     }
 
     fn disc_buff_left(&self, name: &str) -> Option<Duration> {
@@ -364,6 +451,33 @@ impl Game for Seeing<'_> {
     }
 
     fn casting(&self) -> bool {
-        self.busy || self.me.casting().is_some()
+        self.fight.task.is_some() || self.me.casting().is_some()
+    }
+
+    fn bot_casting(&self) -> Option<String> {
+        self.fight.task_spell.clone()
+    }
+
+    fn members(&self) -> Vec<Member> {
+        self.group.iter().map(|mate| mate.member.clone()).collect()
+    }
+
+    fn buff_left(&self, member: u32, spell: &str) -> Option<Duration> {
+        let landed = self.fight.landed.iter().filter(|(name, target, _)| name == spell && target.is_none_or(|target| target == member));
+        if let Some(at) = landed.map(|(_, _, at)| *at).max().filter(|at| at.elapsed() < LANDED_HOLD) {
+            return Some(LANDED_HOLD - at.elapsed());
+        }
+        let Some(buffs) = &self.group.iter().find(|mate| mate.member.id == member)?.buffs else { return Some(Duration::MAX) };
+        let id = self.mq.spell_book().map(|(_, book)| book).find(|book| same_name(spell, &book.name()))?.id().0;
+        buffs.iter().find(|(buff, _)| *buff == id).map(|(_, left)| *left)
+    }
+
+    fn in_range(&self, spell: &str, member: u32) -> bool {
+        if member == self.me.id().0 {
+            return true;
+        }
+        let Some((_, spell)) = memorized(self.mq, spell) else { return false };
+        let reach = if spell.range() > 0.0 { spell.range() } else { spell.ae_range() };
+        self.mq.spawn(SpawnId(member)).is_some_and(|spawn| reach <= 0.0 || self.me.distance_to(&spawn) <= reach)
     }
 }
