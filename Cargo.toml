@@ -5,7 +5,7 @@ members = ["crates/bots-core"]
 name = "mq2-bots"
 version = "0.1.0"
 edition = "2024"
-license = "MIT"
+license = "GPL-2.0-or-later"
 publish = false
 
 [lib]

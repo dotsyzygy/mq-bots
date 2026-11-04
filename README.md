@@ -56,4 +56,8 @@ Monk archetypes: `ability.offense`, `disc.regular`, `disc.burn`, `aa.burn`, `men
 
 ## License
 
-MIT.
+Copyright (C) 2026 Syzygy.
+
+MQ2Bots is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version. See [LICENSE](LICENSE). It's distributed in the hope that it will be useful, but without any warranty.
+
+Anyone who distributes MQ2Bots, changed or not, must give the full source under the same license. Whoever receives it, paid or not, gets the same rights, including sharing it for free.
