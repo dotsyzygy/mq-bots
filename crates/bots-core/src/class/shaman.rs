@@ -1,8 +1,8 @@
-//! The shaman: stays back and casts. Heals (in a fight or out) and keeps its
-//! spells memorized so far; buffs, debuffs, DoTs and nukes come in
-//! milestones S4 and S5.
+//! The shaman: stays back and casts. Heals (in a fight or out), keeps melee
+//! buffs up in a fight and keeps its spells memorized so far; debuffs, DoTs
+//! and nukes come next.
 
-use super::{Action, Class, Game, Member, Spells, best_memorized};
+use super::{Action, Class, Game, Member, Spells, best_memorized, melee_class};
 use crate::{Config, State};
 
 pub struct Shaman;
@@ -70,9 +70,26 @@ impl Class for Shaman {
         None
     }
 
-    fn fight(&mut self, _config: &Config, _state: &State, _game: &dyn Game) -> Option<Action> {
-        None
+    /// Melee buffs; debuffs, DoTs and nukes come next.
+    fn fight(&mut self, config: &Config, _state: &State, game: &dyn Game) -> Option<Action> {
+        if game.casting() {
+            return None;
+        }
+        melee_buff(config, game)
     }
+}
+
+/// `buff.melee` on the first melee-class member, the tank first, then on the
+/// first member's pet, that it reaches and that hasn't got it with more than
+/// `RebuffAt` left.
+fn melee_buff(config: &Config, game: &dyn Game) -> Option<Action> {
+    let buff = best_memorized(config, "buff.melee", game).filter(|buff| game.spell_ready(buff))?;
+    let mut members = game.members();
+    members.sort_by_key(|member| !member.tank);
+    let melee = members.iter().filter(|member| melee_class(member.class)).map(|member| member.id);
+    let mut spawns = melee.chain(members.iter().filter_map(|member| member.pet));
+    let target = spawns.find(|&spawn| game.in_range(buff, spawn) && game.buff_left(spawn, buff).is_none_or(|left| left < config.rebuff_at))?;
+    Some(Action::Cast { spell: buff.to_owned(), target: Some(target) })
 }
 
 /// The lowest of the tank below `HealAt` and anyone else below
@@ -101,6 +118,11 @@ mod tests {
     const TANK: u32 = 2;
     const ROGUE: u32 = 3;
     const CLERIC: u32 = 4;
+    const WOLF: u32 = 5;
+    const MONK: u8 = 7;
+    const ROGUE_CLASS: u8 = 9;
+    const CLERIC_CLASS: u8 = 2;
+    const SHAMAN_CLASS: u8 = 10;
 
     fn config() -> Config {
         let section = |name: &str, spells: &[&str]| (name.to_owned(), spells.iter().enumerate().map(|(i, spell)| ((i + 1).to_string(), spell.to_string())).collect());
@@ -109,18 +131,25 @@ mod tests {
             section("heal.hot", &["Spiritual Light"]),
             section("heal.group.hot", &["Breath of Trushar"]),
             section("debuff", &["Togor's Insects"]),
+            section("buff.melee", &["Spirit of the Panther"]),
         ];
         Config::from_layers(&[crate::Layer { name: "Shaman.ini".into(), sections }]).0
     }
 
     fn member(id: u32, hp_percent: i32) -> Member {
-        Member { id, hp_percent, tank: id == TANK, fighting: id == TANK }
+        let class = match id {
+            ME => SHAMAN_CLASS,
+            TANK => MONK,
+            ROGUE => ROGUE_CLASS,
+            _ => CLERIC_CLASS,
+        };
+        Member { id, hp_percent, tank: id == TANK, fighting: id == TANK, class, pet: None }
     }
 
-    /// Everyone at full HP, the tank fighting, every heal memorized and
+    /// Everyone at full HP, the tank fighting, every spell memorized and
     /// ready, and the tank's HoT on.
     fn group() -> FakeGame {
-        let heals = ["Greater Healing", "Spiritual Light", "Breath of Trushar", "Togor's Insects"];
+        let heals = ["Greater Healing", "Spiritual Light", "Breath of Trushar", "Togor's Insects", "Spirit of the Panther"];
         FakeGame {
             gems: heals.iter().enumerate().map(|(gem, spell)| (gem + 1, *spell)).collect(),
             ready: heals.to_vec(),
@@ -227,5 +256,40 @@ mod tests {
         assert_eq!(urgent(&game), None, "the tank isn't fighting");
         game.members[2].fighting = true;
         assert_eq!(urgent(&game), None, "only the tank gets it");
+    }
+
+    fn fight(game: &FakeGame) -> Option<Action> {
+        Shaman.fight(&config(), &State::new(&Config::default()), game)
+    }
+
+    const PANTHER: &str = "Spirit of the Panther";
+
+    #[test]
+    fn melee_buffs_the_tank_then_melee_then_pets() {
+        let mut game = group();
+        game.members[3].pet = Some(WOLF);
+        assert_eq!(fight(&game), cast(PANTHER, Some(TANK)), "the tank first");
+        game.member_buffs.push((TANK, PANTHER));
+        assert_eq!(fight(&game), cast(PANTHER, Some(ROGUE)), "then the rogue; not the shaman or the cleric");
+        game.member_buffs.push((ROGUE, PANTHER));
+        assert_eq!(fight(&game), cast(PANTHER, Some(WOLF)), "then the cleric's pet");
+        game.member_buffs.push((WOLF, PANTHER));
+        assert_eq!(fight(&game), None, "on everyone");
+        game.fading.push((ROGUE, PANTHER));
+        assert_eq!(fight(&game), cast(PANTHER, Some(ROGUE)), "under RebuffAt");
+    }
+
+    #[test]
+    fn melee_buffs_wait_for_range_the_spell_and_the_cast() {
+        let mut game = group();
+        game.out_of_range = vec![TANK];
+        assert_eq!(fight(&game), cast(PANTHER, Some(ROGUE)), "the tank is out of range");
+        game.bot_casting = Some("Spiritual Light");
+        assert_eq!(fight(&game), None, "a cast is under way");
+        game.bot_casting = None;
+        game.ready.retain(|spell| *spell != PANTHER);
+        assert_eq!(fight(&game), None, "not ready");
+        game.gems.retain(|(_, spell)| *spell != PANTHER);
+        assert_eq!(fight(&game), None, "not memorized");
     }
 }

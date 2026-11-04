@@ -11,6 +11,7 @@
 //! Every section but `[Settings]` is an archetype.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use crate::Mode;
 
@@ -42,6 +43,8 @@ pub struct Config {
     pub group_hot_at: u8,
     /// How many members below `GroupHotAt` it takes (`GroupHotCount`).
     pub group_hot_count: u8,
+    /// Cast a buff again with this little left on it (`RebuffAt`, seconds).
+    pub rebuff_at: Duration,
     /// By lowercase name, since INI sections ignore case.
     pub(crate) archetypes: BTreeMap<String, Vec<String>>,
 }
@@ -57,6 +60,7 @@ impl Default for Config {
             emergency_at: 50,
             group_hot_at: 85,
             group_hot_count: 2,
+            rebuff_at: Duration::from_secs(6),
             archetypes: BTreeMap::new(),
         }
     }
@@ -111,6 +115,7 @@ impl Config {
             "emergencyat" => percent(&mut self.emergency_at),
             "grouphotat" => percent(&mut self.group_hot_at),
             "grouphotcount" => value.parse().ok().filter(|count| (1..=6).contains(count)).map(|count| self.group_hot_count = count).ok_or("a count from 1 to 6"),
+            "rebuffat" => value.parse().ok().filter(|seconds| *seconds <= 600).map(|seconds| self.rebuff_at = Duration::from_secs(seconds)).ok_or("seconds from 0 to 600"),
             "campradius" => value.parse::<f32>().ok().filter(|radius| *radius > 0.0 && radius.is_finite()).map(|radius| self.camp_radius = radius).ok_or("a distance above 0"),
             _ => return Err(format!("{key} isn't a setting")),
         };
@@ -194,12 +199,13 @@ mod tests {
         let (config, problems) = Config::from_layers(&[settings]);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!((config.mode, config.follow, config.assist_at, config.camp_radius), (Mode::Off, true, 100, 60.5));
-        let heals = layer("Shaman.ini", &[("Settings", &[("HealAt", "75"), ("EmergencyAt", "40"), ("GroupHotAt", "90"), ("GroupHotCount", "3")])]);
+        let heals = layer("Shaman.ini", &[("Settings", &[("HealAt", "75"), ("EmergencyAt", "40"), ("GroupHotAt", "90"), ("GroupHotCount", "3"), ("RebuffAt", "20")])]);
         let (config, problems) = Config::from_layers(&[heals]);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!((config.heal_at, config.emergency_at, config.group_hot_at, config.group_hot_count), (75, 40, 90, 3));
-        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("HealAt", "101"), ("GroupHotCount", "0")])])]);
-        assert_eq!(problems, ["Shaman.ini: [Settings] HealAt=101: a percent from 1 to 100", "Shaman.ini: [Settings] GroupHotCount=0: a count from 1 to 6"]);
+        assert_eq!(config.rebuff_at, Duration::from_secs(20));
+        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("HealAt", "101"), ("GroupHotCount", "0"), ("RebuffAt", "-1")])])]);
+        assert_eq!(problems, ["Shaman.ini: [Settings] HealAt=101: a percent from 1 to 100", "Shaman.ini: [Settings] GroupHotCount=0: a count from 1 to 6", "Shaman.ini: [Settings] RebuffAt=-1: seconds from 0 to 600"]);
     }
 
     #[test]

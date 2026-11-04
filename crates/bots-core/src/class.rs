@@ -37,6 +37,16 @@ pub struct Member {
     pub tank: bool,
     /// Auto attack is on.
     pub fighting: bool,
+    /// The game's class ID (1 for warrior...).
+    pub class: u8,
+    /// Its pet's spawn ID, if it has one in the zone.
+    pub pet: Option<u32>,
+}
+
+/// Whether a class ID is one that fights in melee: WAR, PAL, RNG, SHD, MNK,
+/// BRD, ROG, BST, BER.
+pub fn melee_class(class: u8) -> bool {
+    matches!(class, 1 | 3 | 4 | 5 | 7 | 8 | 9 | 15 | 16)
 }
 
 /// The game as a class sees it, with names as the INI gives them.
@@ -75,13 +85,13 @@ pub trait Game {
     /// The group's members in the zone and alive, you included; just you
     /// out of a group.
     fn members(&self) -> Vec<Member>;
-    /// Time left on a spell, by the INI's name, on a member; `None` if it
-    /// isn't on it. A member whose buffs aren't seen has every one, so
-    /// nothing is cast on it over and over.
-    fn buff_left(&self, member: u32, spell: &str) -> Option<Duration>;
-    /// A member close enough for a memorized spell, by the INI's name, to
-    /// reach (its range, or a group spell's AE range).
-    fn in_range(&self, spell: &str, member: u32) -> bool;
+    /// Time left on a spell, by the INI's name, on a member or a member's
+    /// pet, by spawn ID; `None` if it isn't on it. One whose buffs aren't
+    /// seen has every one, so nothing is cast on it over and over.
+    fn buff_left(&self, spawn: u32, spell: &str) -> Option<Duration>;
+    /// A member or pet close enough for a memorized spell, by the INI's
+    /// name, to reach (its range, or a group spell's AE range).
+    fn in_range(&self, spell: &str, spawn: u32) -> bool;
 }
 
 pub trait Class {
@@ -252,8 +262,10 @@ pub(crate) struct FakeGame {
     pub casting: bool,
     pub bot_casting: Option<&'static str>,
     pub members: Vec<Member>,
-    /// Spells on members, by member ID.
+    /// Spells on members and pets, by spawn ID, with 12 seconds left.
     pub member_buffs: Vec<(u32, &'static str)>,
+    /// Spells on members and pets with this little left.
+    pub fading: Vec<(u32, &'static str)>,
     /// Members out of every spell's range.
     pub out_of_range: Vec<u32>,
 }
@@ -302,11 +314,14 @@ impl Game for FakeGame {
     fn members(&self) -> Vec<Member> {
         self.members.clone()
     }
-    fn buff_left(&self, member: u32, spell: &str) -> Option<Duration> {
-        self.member_buffs.contains(&(member, spell)).then_some(Duration::from_secs(12))
+    fn buff_left(&self, spawn: u32, spell: &str) -> Option<Duration> {
+        if self.fading.contains(&(spawn, spell)) {
+            return Some(Duration::from_secs(3));
+        }
+        self.member_buffs.contains(&(spawn, spell)).then_some(Duration::from_secs(12))
     }
-    fn in_range(&self, _spell: &str, member: u32) -> bool {
-        !self.out_of_range.contains(&member)
+    fn in_range(&self, _spell: &str, spawn: u32) -> bool {
+        !self.out_of_range.contains(&spawn)
     }
 }
 

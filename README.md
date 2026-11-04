@@ -60,6 +60,8 @@ EmergencyAt=50
 ; GroupHotAt% HP (default 85) without it
 GroupHotAt=85
 GroupHotCount=2
+; Buffers: cast a buff again with this many seconds left on it (default 6)
+RebuffAt=6
 
 ; Every other section is an archetype: numbered entries, best first.
 ; The bot uses the first one the character has and can use.

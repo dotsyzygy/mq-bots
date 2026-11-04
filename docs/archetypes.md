@@ -22,10 +22,10 @@ An archetype is a kind of thing a class does, such as a heal or a kick. The code
 | `ability.offense` | Kicks and strikes from the abilities page (Flying Kick, Tiger Claw...), used whenever ready and in range | Yes |
 | `disc.regular` | Short discs for normal fighting, used when no ability is ready | Yes |
 | `aura` | Auras, best first; out of combat the best one you have is kept up | Yes |
-| `disc.burn` | Big discs, only during `/bots burn` | Milestone 5 |
-| `aa.burn` | AAs, only during `/bots burn` | Milestone 5 |
-| `mend` | Self-heal below an HP% | Milestone 5 |
-| `fd` | Feign Death when you have aggro and low HP | Milestone 5 |
+| `disc.burn` | Big discs, only during `/bots burn` | Milestone 1 |
+| `aa.burn` | AAs, only during `/bots burn` | Milestone 1 |
+| `mend` | Self-heal below an HP% | Milestone 1 |
+| `fd` | Feign Death when you have aggro and low HP | Milestone 1 |
 
 ## Shaman
 
@@ -36,10 +36,10 @@ Listed most important first. The shaman keeps memorized what it uses of each, on
 | `heal` | Single-target heal | Cast |
 | `heal.hot` | Single-target heal over time, kept on the tank | Cast |
 | `heal.group.hot` | Group heal over time | Cast |
-| `buff.melee` | Short melee buffs (Spirit of the Panther), on melee and pets in combat | Memorized; cast from S4 |
-| `debuff` | Slows, malos, cripples..., *each kind*, kept on the mob in list order | Memorized; cast from S5 |
-| `dot` | DoTs, *each kind* (poison, disease), the same way | Memorized; cast from S5 |
-| `nuke` | Direct damage | Memorized; cast from S5 |
+| `buff.melee` | Short melee buffs (Spirit of the Panther), in a fight, on melee-class members (the tank first), then their pets, when missing or under `RebuffAt` seconds left | Cast |
+| `debuff` | Slows, malos, cripples..., *each kind*, kept on the mob in list order | Memorized; cast from S1 |
+| `dot` | DoTs, *each kind* (poison, disease), the same way | Memorized; cast from S1 |
+| `nuke` | Direct damage | Memorized; cast from S1 |
 
 `heal.group` (a direct group heal, no HoT) is a different archetype, for classes that have one; the shaman doesn't.
 

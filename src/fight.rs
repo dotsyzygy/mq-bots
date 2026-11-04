@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use bots_core::{Action, Decision, Game, Member, Mob, Mode, Seen, aura_named, decide, plan_gems, same_name};
 use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
-use posse_core::flags;
+use posse_core::{BuffEntry, flags};
 use posse_shm::now_ms;
 
 use crate::Bots;
@@ -22,6 +22,9 @@ const AURA_RETRY: Duration = Duration::from_secs(30);
 /// A spell that just landed on someone is taken as on them this long, until
 /// Posse shows it: no casting it twice.
 const LANDED_HOLD: Duration = Duration::from_secs(6);
+/// A spell that didn't take hold on someone (a stronger one is on them) is
+/// taken as on them this long.
+const BLOCKED_HOLD: Duration = Duration::from_secs(60);
 const MOVEUTILS: &str = "MQ2MoveUtils";
 
 #[derive(Default)]
@@ -40,6 +43,8 @@ pub struct Fight {
     /// Spells that landed lately, by the INI's name, on a spawn (or the
     /// group, for `None`), and when.
     landed: Vec<(String, Option<u32>, Instant)>,
+    /// The same for spells that didn't take hold (a stronger one is on).
+    blocked: Vec<(String, Option<u32>, Instant)>,
     /// When the last action was taken.
     last_action: Option<Instant>,
     /// Spells, by the INI's name, that wouldn't memorize; the next best is
@@ -128,19 +133,23 @@ impl Bots {
             }
             let tank = tank.as_ref().is_some_and(|tank| tank.eq_ignore_ascii_case(&name));
             let id = spawn.id().0;
-            let (hp_percent, fighting, buffs) = if id == me.id().0 {
+            let pet = mq.pet_of(&spawn).filter(|pet| !pet.is_corpse()).map(|pet| pet.id().0);
+            let (hp_percent, fighting, buffs, pet_buffs) = if id == me.id().0 {
                 let mine = mq.buffs().chain(mq.songs()).filter_map(|buff| Some((buff.spell()?.id().0, buff.remaining().unwrap_or(Duration::MAX))));
-                (me.hp_percent(), mq.is_auto_attacking(), Some(mine.collect()))
+                let pets = mq.pet_buffs().filter_map(|buff| Some((buff.spell()?.id().0, buff.remaining().unwrap_or(Duration::MAX))));
+                (me.hp_percent(), mq.is_auto_attacking(), Some(mine.collect()), Some(pets.collect()))
             } else if let Some(status) = self.posse.as_mut().and_then(|posse| posse.status(&name)).filter(|status| status.id == id) {
                 let age = status.age_ms(now_ms());
                 let left = |ms: Option<i64>| ms.map_or(Duration::MAX, |ms| Duration::from_millis(ms.max(0) as u64));
-                let buffs = status.buffs.iter().chain(&status.songs).filter(|buff| !buff.is_empty()).map(|buff| (buff.spell_id, left(buff.ms_left_after(age)))).filter(|(_, left)| !left.is_zero());
-                (status.hp_percent, status.has_flag(flags::COMBAT), Some(buffs.collect()))
+                let seen = |buffs: &mut dyn Iterator<Item = &BuffEntry>| buffs.filter(|buff| !buff.is_empty()).map(|buff| (buff.spell_id, left(buff.ms_left_after(age)))).filter(|(_, left)| !left.is_zero()).collect();
+                // Its pet's buffs, if Posse has the same pet.
+                let pet_buffs = pet.filter(|pet| *pet == status.pet_id).map(|_| seen(&mut status.pet_buffs.iter()));
+                (status.hp_percent, status.has_flag(flags::COMBAT), Some(seen(&mut status.buffs.iter().chain(&status.songs))), pet_buffs)
             } else {
-                (spawn.hp_percent(), false, None)
+                (spawn.hp_percent(), false, None, None)
             };
             if hp_percent > 0 {
-                mates.push(Mate { member: Member { id, hp_percent, tank, fighting }, buffs });
+                mates.push(Mate { member: Member { id, hp_percent, tank, fighting, class: spawn.class(), pet }, buffs, pet_buffs });
             }
         }
         mates
@@ -169,8 +178,9 @@ impl Bots {
             self.fight.next_action = Some(Instant::now() + ACTION_GAP);
             return;
         }
+        let group = self.group(mq, me);
         let Some(class) = self.class.as_mut() else { return };
-        let Some(action) = class.fight(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, Vec::new())) else { return };
+        let Some(action) = class.fight(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, group)) else { return };
         self.act(mq, &action);
     }
 
@@ -282,8 +292,11 @@ impl Bots {
         self.fight.task = None;
         self.fight.task_spell = None;
         self.fight.landed.retain(|(_, _, at)| at.elapsed() < LANDED_HOLD);
+        self.fight.blocked.retain(|(_, _, at)| at.elapsed() < BLOCKED_HOLD);
         if result.completed() {
             self.fight.landed.push((name.to_owned(), target, Instant::now()));
+        } else if result == CastResult::DidNotTakeHold {
+            self.fight.blocked.push((name.to_owned(), target, Instant::now()));
         }
         let failure = (!result.completed()).then(|| (name.to_owned(), result));
         if failure.is_some() && failure != self.fight.last_failure {
@@ -366,6 +379,8 @@ struct Mate {
     /// Buffs and songs by spell ID, with time left (`Duration::MAX` for one
     /// that doesn't run out); `None` if they aren't seen (not in Posse).
     buffs: Option<Vec<(i32, Duration)>>,
+    /// Its pet's, the same way.
+    pet_buffs: Option<Vec<(i32, Duration)>>,
 }
 
 /// The game as the class sees it, against the target.
@@ -462,22 +477,30 @@ impl Game for Seeing<'_> {
         self.group.iter().map(|mate| mate.member.clone()).collect()
     }
 
-    fn buff_left(&self, member: u32, spell: &str) -> Option<Duration> {
-        let landed = self.fight.landed.iter().filter(|(name, target, _)| name == spell && target.is_none_or(|target| target == member));
-        if let Some(at) = landed.map(|(_, _, at)| *at).max().filter(|at| at.elapsed() < LANDED_HOLD) {
-            return Some(LANDED_HOLD - at.elapsed());
+    fn buff_left(&self, spawn: u32, spell: &str) -> Option<Duration> {
+        // Just landed, or wouldn't take hold: taken as on, with all its time.
+        let held = |casts: &[(String, Option<u32>, Instant)], hold: Duration| {
+            casts.iter().any(|(name, target, at)| name == spell && target.is_none_or(|target| target == spawn) && at.elapsed() < hold)
+        };
+        if held(&self.fight.landed, LANDED_HOLD) || held(&self.fight.blocked, BLOCKED_HOLD) {
+            return Some(Duration::MAX);
         }
-        let Some(buffs) = &self.group.iter().find(|mate| mate.member.id == member)?.buffs else { return Some(Duration::MAX) };
+        let buffs = self.group.iter().find_map(|mate| match mate.member.pet {
+            _ if mate.member.id == spawn => Some(&mate.buffs),
+            Some(pet) if pet == spawn => Some(&mate.pet_buffs),
+            _ => None,
+        });
+        let Some(Some(buffs)) = buffs else { return Some(Duration::MAX) };
         let id = self.mq.spell_book().map(|(_, book)| book).find(|book| same_name(spell, &book.name()))?.id().0;
         buffs.iter().find(|(buff, _)| *buff == id).map(|(_, left)| *left)
     }
 
-    fn in_range(&self, spell: &str, member: u32) -> bool {
-        if member == self.me.id().0 {
+    fn in_range(&self, spell: &str, spawn: u32) -> bool {
+        if spawn == self.me.id().0 {
             return true;
         }
         let Some((_, spell)) = memorized(self.mq, spell) else { return false };
         let reach = if spell.range() > 0.0 { spell.range() } else { spell.ae_range() };
-        self.mq.spawn(SpawnId(member)).is_some_and(|spawn| reach <= 0.0 || self.me.distance_to(&spawn) <= reach)
+        self.mq.spawn(SpawnId(spawn)).is_some_and(|spawn| reach <= 0.0 || self.me.distance_to(&spawn) <= reach)
     }
 }
