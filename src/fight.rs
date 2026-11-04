@@ -2,8 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use bots_core::{Action, Decision, Game, Mob, Seen, decide, same_name};
-use bots_core::Mode;
+use bots_core::{Action, Decision, Game, Mob, Mode, Seen, aura_named, decide, same_name};
 use mq_emu::{CombatState, GroupRole, Mq, Spawn, SpawnId, SpellId, green, yellow};
 
 use crate::Bots;
@@ -16,6 +15,8 @@ const ACTION_GAP: Duration = Duration::from_millis(500);
 /// The same, out of combat: an aura takes a moment to show in the aura
 /// window, and nothing there is in a hurry.
 const REST_GAP: Duration = Duration::from_secs(3);
+/// An aura used again this soon, with auras up, isn't being seen.
+const AURA_RETRY: Duration = Duration::from_secs(30);
 const MOVEUTILS: &str = "MQ2MoveUtils";
 
 #[derive(Default)]
@@ -24,6 +25,9 @@ pub struct Fight {
     next_action: Option<Instant>,
     /// Said once that sticking needs MQ2MoveUtils.
     warned_stick: bool,
+    /// The aura last used, and when.
+    last_aura: Option<(String, Instant)>,
+    pub given_up_auras: Vec<String>,
 }
 
 impl Bots {
@@ -84,7 +88,7 @@ impl Bots {
             return;
         }
         let Some(class) = self.class.as_mut() else { return };
-        let Some(action) = class.fight(&self.config, &self.state, &Seeing { mq, me }) else { return };
+        let Some(action) = class.fight(&self.config, &self.state, &Seeing { mq, me, given_up_auras: &self.fight.given_up_auras }) else { return };
         self.act(mq, &action);
     }
 
@@ -100,9 +104,31 @@ impl Bots {
             return;
         }
         let Some(class) = self.class.as_mut() else { return };
-        let Some(action) = class.rest(&self.config, &self.state, &Seeing { mq, me }) else { return };
+        let Some(action) = class.rest(&self.config, &self.state, &Seeing { mq, me, given_up_auras: &self.fight.given_up_auras }) else { return };
+        if self.repeats_an_aura(mq, &action) {
+            return;
+        }
         self.act(mq, &action);
         self.fight.next_action = Some(Instant::now() + REST_GAP);
+    }
+
+    /// Whether `action` is an aura used moments ago while auras are up: its
+    /// name in the aura window can't be matched, so it would be used again
+    /// and again. It's given up on (taken as up) and said in chat.
+    fn repeats_an_aura(&mut self, mq: &Mq<Self>, action: &Action) -> bool {
+        let Action::Disc(name) = action else { return false };
+        if !self.config.archetype("aura").iter().any(|aura| aura == name) {
+            return false;
+        }
+        let repeated = self.fight.last_aura.as_ref().is_some_and(|(last, at)| last == name && at.elapsed() < AURA_RETRY);
+        let auras: Vec<String> = mq.auras().into_iter().map(|aura| aura.name).collect();
+        if repeated && !auras.is_empty() {
+            mq.chat(yellow!("[Bots] {name} doesn't match an aura that's up ({}), so it's taken as up until /bots reload", auras.join(", ")));
+            self.fight.given_up_auras.push(name.clone());
+            return true;
+        }
+        self.fight.last_aura = Some((name.clone(), Instant::now()));
+        false
     }
 
     fn act(&mut self, mq: &Mq<Self>, action: &Action) {
@@ -148,6 +174,8 @@ fn mob(spawn: &Spawn<'_>, me: &Spawn<'_>) -> Mob {
 struct Seeing<'a> {
     mq: &'a Mq<Bots>,
     me: &'a Spawn<'a>,
+    /// Auras taken as up, since their name in the aura window isn't known.
+    given_up_auras: &'a [String],
 }
 
 impl Game for Seeing<'_> {
@@ -181,7 +209,7 @@ impl Game for Seeing<'_> {
             names.push(ability.name());
             names.extend(self.mq.spell(SpellId(ability.id().0 + 1)).map(|spell| spell.name()));
         }
-        auras.iter().any(|aura| names.iter().any(|name| same_name(name, &aura.name) || same_name(&aura.name, name)))
+        auras.iter().any(|aura| names.iter().any(|name| aura_named(name, &aura.name))) || self.given_up_auras.iter().any(|given_up| same_name(name, given_up))
     }
 
     fn disc_buff_left(&self, name: &str) -> Option<Duration> {

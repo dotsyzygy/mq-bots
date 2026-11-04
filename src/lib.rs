@@ -97,6 +97,7 @@ impl Bots {
             Command::Reload if self.loaded_for.is_empty() => mq.chat(yellow!("[Bots] nothing to reload until a character is in game")),
             Command::Reload => {
                 self.load(mq);
+                self.fight.given_up_auras.clear();
                 if let Some(class) = &self.class {
                     self.check_archetypes(mq, class.archetypes());
                 }
@@ -122,6 +123,7 @@ impl Bots {
     fn come_in(&mut self, mq: &Mq<Self>, character: &str) {
         let class = mq.me().and_then(|me| mq.class_name(me.class())).unwrap_or_default();
         self.class = for_class(&class);
+        self.fight = fight::Fight::default();
         match &self.class {
             None => mq.chat(yellow!("[Bots] {class} isn't implemented yet")),
             Some(module) => self.check_archetypes(mq, module.archetypes()),

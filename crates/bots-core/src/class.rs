@@ -70,6 +70,16 @@ pub fn keep_aura(config: &Config, game: &dyn Game) -> Option<Action> {
     (!game.aura_active(best) && disc_usable(game, best)).then(|| Action::Disc(best.clone()))
 }
 
+/// Whether the aura window's name for an aura is `name` (an INI entry or a
+/// spell's name). The window drops punctuation ("Masters Aura" for
+/// "Master's Aura") and may add to the name, so only letters and digits
+/// count, and one may start with the other.
+pub fn aura_named(name: &str, aura: &str) -> bool {
+    let plain = |text: &str| text.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect::<String>();
+    let (name, aura) = (plain(name), plain(aura));
+    !name.is_empty() && !aura.is_empty() && (aura.starts_with(&name) || name.starts_with(&aura))
+}
+
 /// Whether an INI entry names the game's ability or spell `game`: the same,
 /// ignoring case, or the same but for the game's rank ("Rk. II").
 pub fn same_name(entry: &str, game: &str) -> bool {
@@ -88,6 +98,15 @@ mod tests {
         assert!(same_name("Ashenhand Discipline Rk. II", "Ashenhand Discipline Rk. II"));
         assert!(!same_name("Ashenhand Discipline Rk. III", "Ashenhand Discipline Rk. II"));
         assert!(!same_name("Ashenhand", "Ashenhand Discipline"));
+    }
+
+    #[test]
+    fn auras_match_without_punctuation_or_a_suffix() {
+        assert!(aura_named("Master's Aura", "Masters Aura"));
+        assert!(aura_named("Master's Aura", "Master's Aura Effect"));
+        assert!(aura_named("disciple's aura", "Disciples Aura"));
+        assert!(!aura_named("Master's Aura", "Disciple's Aura"));
+        assert!(!aura_named("", "Masters Aura"));
     }
 
     #[test]
