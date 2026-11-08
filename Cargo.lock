@@ -18,8 +18,8 @@ dependencies = [
 
 [[package]]
 name = "eq-client"
-version = "0.1.11"
-source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.1.11#8b7b793d599c7d0b1c2531f04e88e554c7315abe"
+version = "0.2.0"
+source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.2.0#e47c796799529ba6e0885d61f2b239add0775d5e"
 
 [[package]]
 name = "find-msvc-tools"
@@ -29,8 +29,8 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "mq-emu"
-version = "0.1.11"
-source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.1.11#8b7b793d599c7d0b1c2531f04e88e554c7315abe"
+version = "0.2.0"
+source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.2.0#e47c796799529ba6e0885d61f2b239add0775d5e"
 dependencies = [
  "eq-client",
  "mq-emu-sys",
@@ -38,8 +38,8 @@ dependencies = [
 
 [[package]]
 name = "mq-emu-sys"
-version = "0.1.11"
-source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.1.11#8b7b793d599c7d0b1c2531f04e88e554c7315abe"
+version = "0.2.0"
+source = "git+https://github.com/dotsyzygy/mq-emu-rs?tag=v0.2.0#e47c796799529ba6e0885d61f2b239add0775d5e"
 dependencies = [
  "cc",
 ]
