@@ -57,14 +57,7 @@ Modes `tank` and `puller` come later.
 
 ## Shaman
 
-Heals, melee buffs and memorizing are done. Long-duration buffs are left out for now: telling whether someone else's better buff is already on a target is its own problem.
-
-Still to come, in the shaman's `fight`, after melee buffs:
-
-1. **Debuffs, then DoTs:** on the MA's target while engaged, each line that isn't on it from this shaman, while mana is above `DpsManaMin` and the mob is above `DotStopAt` HP%. After `MaxResists` resists in a row, a line is given up on that mob (slow-immune mobs).
-2. **Nuke:** while mana is above `NukeManaMin`.
-
-The mob's debuffs and DoTs come from `target_buffs` with each buff's caster, once `target_buffs_populated` says they've arrived.
+Heals, melee buffs, memorizing, debuffs, DoTs and nukes are done. Long-duration buffs are left out for now: telling whether someone else's better buff is already on a target is its own problem.
 
 Known problem, melee buffs: a buff that lands but is then overwritten by another buff on the target is cast again every time it's ready, forever. Seen with Champion, a group spell with a long cooldown. Its cast lands, so neither the 6-second hold nor the `DidNotTakeHold` hold applies, and once the hold ends Posse shows it missing. Fix idea: a buff that landed but isn't seen on the target after Posse has caught up was overwritten, so stop casting it on that target for a while (or until `/bots reload`) and say so in chat once. Related: a group buff like Champion should be cast once for the group (no target), when it's missing on enough melee members, not once per member.
 
@@ -81,5 +74,4 @@ Monk:
 
 Shaman:
 
-- S1. Debuffs, DoTs and nukes, with mana floors and giving up after resists. Stopping a cast for a heal can be tried in game once these cast.
-- S2. Try it in game with the group.
+- S1. Try it in game with the group.

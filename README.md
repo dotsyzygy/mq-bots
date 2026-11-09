@@ -63,6 +63,14 @@ GroupHotAt=85
 GroupHotCount=2
 ; Buffers: cast a buff again with this many seconds left on it (default 6)
 RebuffAt=6
+; Casters: debuff and DoT only with mana above DpsManaMin% (default 40) and the
+; mob above DotStopAt% HP (default 25); give up on one a mob resists
+; MaxResists times in a row (default 3); nuke only with mana above
+; NukeManaMin% (default 70)
+DpsManaMin=40
+DotStopAt=25
+MaxResists=3
+NukeManaMin=70
 
 ; Every other section is an archetype: numbered entries, best first.
 ; The bot uses the first one the character has and can use.
@@ -74,7 +82,7 @@ RebuffAt=6
 1=Thunderkick
 ```
 
-Each class's archetypes, what goes in them and which are used yet: [docs/archetypes.md](docs/archetypes.md). The shaman doesn't melee. So far it memorizes its spells and, in mode `assist`, heals, in a fight or out, only members its spell reaches: the lowest of the tank below `HealAt` and anyone else below `EmergencyAt` (stopping its own cast for it unless that's a heal), then the group HoT, then the HoT on the tank while it's attacking. The tank is whoever has the Main Tank role, or else the MA. HP and buffs come from Posse, so members who aren't in the posse get emergency heals but no HoTs. A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
+Each class's archetypes, what goes in them and which are used yet: [docs/archetypes.md](docs/archetypes.md). The shaman doesn't melee. It memorizes its spells and, in mode `assist`, heals, in a fight or out, only members its spell reaches: the lowest of the tank below `HealAt` and anyone else below `EmergencyAt` (stopping its own cast for it unless that's a heal), then the group HoT, then the HoT on the tank while it's attacking. In a fight, after melee buffs, it keeps its `debuff`s, then `dot`s, on the mob (one of each kind, its own seen in the target window once the server has sent the mob's buffs), while mana is above `DpsManaMin` and the mob above `DotStopAt`; a mob that resists one `MaxResists` times in a row, or is immune, has that spell given up on, and chat says so. Then it nukes while mana is above `NukeManaMin`. The tank is whoever has the Main Tank role, or else the MA. HP and buffs come from Posse, so members who aren't in the posse get emergency heals but no HoTs. A section the class doesn't read, such as a misspelled one, is reported in chat on load and on `/bots reload`.
 
 A caster memorizes its spells itself, out of combat, after loading and after `/bots reload`: for each spell archetype, the best spell in the spell book that's castable at the character's level, so one INI works at every level, and for `debuff` and `dot`, the best of each kind (one slow, one malo...; see [docs/archetypes.md](docs/archetypes.md)). Each gets a gem. A spell already memorized stays in its gem; the others go into gems holding nothing the bot uses. With more spells than gems, the class's most important ones get gems, and chat says which were left out. A spell the game won't memorize is reported, and the next best is used until `/bots reload`.
 

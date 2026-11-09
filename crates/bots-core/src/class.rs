@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use crate::{Config, State};
+use crate::{Config, Mob, State};
 
 mod monk;
 mod shaman;
@@ -92,6 +92,17 @@ pub trait Game {
     /// A member or pet close enough for a memorized spell, by the INI's
     /// name, to reach (its range, or a group spell's AE range).
     fn in_range(&self, spell: &str, spawn: u32) -> bool;
+    /// Your mana as a percent of your most.
+    fn mana_percent(&self) -> i32;
+    /// The mob being fought, its HP as the MA sees it when it can.
+    fn mob(&self) -> Option<Mob>;
+    /// Whether the mob being fought has a spell, by the INI's name, from
+    /// you; `None` while its buffs aren't seen (not targeted, or the
+    /// server hasn't sent them yet).
+    fn on_mob(&self, spell: &str) -> Option<bool>;
+    /// Times in a row the mob being fought resisted a spell, by the INI's
+    /// name (`u8::MAX` if it's immune).
+    fn resists(&self, spell: &str) -> u8;
 }
 
 pub trait Class {
@@ -173,6 +184,22 @@ pub fn spells_used<'a>(config: &'a Config, spells: Spells, game: &dyn Game, skip
 /// keeps, or the next best if that one wouldn't memorize.
 pub fn best_memorized<'a>(config: &'a Config, archetype: &str, game: &dyn Game) -> Option<&'a str> {
     config.archetype(archetype).iter().find(|name| game.spell_gem(name).is_some()).map(String::as_str)
+}
+
+/// The best memorized spell of each kind ([`Game::spell_kind`]) in an
+/// archetype, in list order: the ones [`Spells::EachKind`] keeps, or the next
+/// best of a kind if one wouldn't memorize.
+pub fn memorized_each_kind<'a>(config: &'a Config, archetype: &str, game: &dyn Game) -> Vec<&'a str> {
+    let mut used = Vec::new();
+    let mut kinds = Vec::new();
+    for name in config.archetype(archetype).iter().filter(|name| game.spell_gem(name).is_some()) {
+        match game.spell_kind(name) {
+            Some(kind) if kinds.contains(&kind) => continue,
+            kind => kinds.extend(kind),
+        }
+        used.push(name.as_str());
+    }
+    used
 }
 
 /// Which spells to keep memorized, and the next one to memorize.
@@ -268,6 +295,12 @@ pub(crate) struct FakeGame {
     pub fading: Vec<(u32, &'static str)>,
     /// Members out of every spell's range.
     pub out_of_range: Vec<u32>,
+    pub mana_percent: i32,
+    pub mob: Option<Mob>,
+    /// Spells from you on the mob; `None` while its buffs aren't seen.
+    pub on_mob: Option<Vec<&'static str>>,
+    /// Resists in a row on the mob.
+    pub resists: Vec<(&'static str, u8)>,
 }
 
 #[cfg(test)]
@@ -322,6 +355,18 @@ impl Game for FakeGame {
     }
     fn in_range(&self, _spell: &str, spawn: u32) -> bool {
         !self.out_of_range.contains(&spawn)
+    }
+    fn mana_percent(&self) -> i32 {
+        self.mana_percent
+    }
+    fn mob(&self) -> Option<Mob> {
+        self.mob
+    }
+    fn on_mob(&self, spell: &str) -> Option<bool> {
+        self.on_mob.as_ref().map(|spells| spells.contains(&spell))
+    }
+    fn resists(&self, spell: &str) -> u8 {
+        self.resists.iter().find(|(name, _)| *name == spell).map_or(0, |(_, count)| *count)
     }
 }
 
@@ -411,6 +456,15 @@ mod tests {
         assert_eq!(plan(&game).next, memorize(6, "Frost Strike"));
         game.gems.push((6, "Frost Strike"));
         assert_eq!(plan(&game).next, None, "all in");
+    }
+
+    #[test]
+    fn casts_the_best_memorized_spell_of_each_kind() {
+        let config = spells_config();
+        let game = FakeGame { gems: vec![(1, "Malaise"), (2, "Togor's Insects"), (3, "Malosi"), (4, "Healing")], ..shaman() };
+        assert_eq!(memorized_each_kind(&config, "debuff", &game), ["Togor's Insects", "Malosi"], "one malo, the better one");
+        let game = FakeGame { gems: vec![(1, "Malaise"), (2, "Sicken")], ..shaman() };
+        assert_eq!(memorized_each_kind(&config, "debuff", &game), ["Malaise"], "the next best of a kind when the best isn't memorized");
     }
 
     #[test]

@@ -1,9 +1,9 @@
-//! The shaman: stays back and casts. Heals and keeps melee buffs up (in a
-//! fight or out) and keeps its spells memorized so far; debuffs, DoTs and
-//! nukes come next.
+//! The shaman: stays back and casts. Heals, keeps melee buffs up (in a fight
+//! or out), keeps its debuffs and DoTs on the mob, nukes, and keeps its
+//! spells memorized.
 
-use super::{Action, Class, Game, Member, Spells, best_memorized, melee_class};
-use crate::{Config, State};
+use super::{Action, Class, Game, Member, Spells, best_memorized, melee_class, memorized_each_kind};
+use crate::{Config, Mob, State};
 
 pub struct Shaman;
 
@@ -74,13 +74,46 @@ impl Class for Shaman {
         melee_buff(config, game)
     }
 
-    /// Melee buffs; debuffs, DoTs and nukes come next.
+    /// Melee buffs, then debuffs and DoTs, then a nuke.
     fn fight(&mut self, config: &Config, _state: &State, game: &dyn Game) -> Option<Action> {
         if game.casting() {
             return None;
         }
-        melee_buff(config, game)
+        if let Some(buff) = melee_buff(config, game) {
+            return Some(buff);
+        }
+        let mob = game.mob()?;
+        let missing = missing_on_mob(config, game, &mob);
+        let castable = |spell: &&str| game.on_mob(spell) == Some(false) && game.spell_ready(spell) && game.in_range(spell, mob.id);
+        if let Some(spell) = missing.iter().copied().find(castable) {
+            return Some(Action::Cast { spell: spell.to_owned(), target: Some(mob.id) });
+        }
+        // Until the mob's buffs are seen, a debuff may be missing: it goes
+        // before a nuke.
+        if missing.iter().any(|spell| game.on_mob(spell).is_none()) {
+            return None;
+        }
+        nuke(config, game, &mob)
     }
+}
+
+/// The `debuff`, then `dot`, spells of each kind the shaman would put on the
+/// mob, that aren't seen on it from this shaman (or its buffs aren't seen
+/// yet): none unless mana is above `DpsManaMin` and the mob above
+/// `DotStopAt`, and none the mob resisted `MaxResists` times in a row.
+fn missing_on_mob<'a>(config: &'a Config, game: &dyn Game, mob: &Mob) -> Vec<&'a str> {
+    if game.mana_percent() <= i32::from(config.dps_mana_min) || mob.hp_percent <= i32::from(config.dot_stop_at) {
+        return Vec::new();
+    }
+    let spells = ["debuff", "dot"].into_iter().flat_map(|archetype| memorized_each_kind(config, archetype, game));
+    spells.filter(|spell| game.on_mob(spell) != Some(true) && game.resists(spell) < config.max_resists).collect()
+}
+
+/// The best `nuke`, with mana above `NukeManaMin`.
+fn nuke(config: &Config, game: &dyn Game, mob: &Mob) -> Option<Action> {
+    let nuke = best_memorized(config, "nuke", game)?;
+    let go = game.mana_percent() > i32::from(config.nuke_mana_min) && game.spell_ready(nuke) && game.in_range(nuke, mob.id);
+    go.then(|| Action::Cast { spell: nuke.to_owned(), target: Some(mob.id) })
 }
 
 /// `buff.melee` on the first melee-class member, the tank first, then on the
@@ -134,7 +167,9 @@ mod tests {
             section("heal", &["Greater Healing", "Healing"]),
             section("heal.hot", &["Spiritual Light"]),
             section("heal.group.hot", &["Breath of Trushar"]),
-            section("debuff", &["Togor's Insects"]),
+            section("debuff", &["Togor's Insects", "Malosi"]),
+            section("dot", &["Envenomed Breath"]),
+            section("nuke", &["Frost Strike"]),
             section("buff.melee", &["Spirit of the Panther"]),
         ];
         Config::from_layers(&[crate::Layer { name: "Shaman.ini".into(), sections }]).0
@@ -307,5 +342,86 @@ mod tests {
         game.member_buffs.clear();
         game.casting = true;
         assert_eq!(rest(&game), None, "a cast is under way");
+    }
+
+    const MOB: u32 = 50;
+    const TOGOR: &str = "Togor's Insects";
+    const MALOSI: &str = "Malosi";
+    const BREATH: &str = "Envenomed Breath";
+    const FROST: &str = "Frost Strike";
+
+    /// A fight against a mob at 90% with nothing on it and its buffs seen,
+    /// at full mana, with the melee buffed and every spell memorized and
+    /// ready.
+    fn fighting() -> FakeGame {
+        let mut game = group();
+        for (gem, spell) in [(6, MALOSI), (7, BREATH), (8, FROST)] {
+            game.gems.push((gem, spell));
+            game.ready.push(spell);
+        }
+        game.kinds = vec![(TOGOR, 88), (MALOSI, 81), (BREATH, 1)];
+        game.member_buffs.extend([(TANK, PANTHER), (ROGUE, PANTHER)]);
+        game.mana_percent = 100;
+        game.mob = Some(Mob { id: MOB, is_npc: true, hp_percent: 90, distance: 50.0 });
+        game.on_mob = Some(vec![]);
+        game
+    }
+
+    #[test]
+    fn debuffs_then_dots_then_a_nuke() {
+        let mut game = fighting();
+        assert_eq!(fight(&game), cast(TOGOR, Some(MOB)), "the slow first");
+        game.on_mob = Some(vec![TOGOR]);
+        assert_eq!(fight(&game), cast(MALOSI, Some(MOB)));
+        game.on_mob = Some(vec![TOGOR, MALOSI]);
+        assert_eq!(fight(&game), cast(BREATH, Some(MOB)), "then the DoT");
+        game.on_mob = Some(vec![TOGOR, MALOSI, BREATH]);
+        assert_eq!(fight(&game), cast(FROST, Some(MOB)), "then a nuke");
+        game.member_buffs.clear();
+        assert_eq!(fight(&game), cast(PANTHER, Some(TANK)), "melee buffs come before");
+    }
+
+    #[test]
+    fn skips_a_debuff_that_cant_be_cast_now() {
+        let mut game = fighting();
+        game.ready.retain(|spell| *spell != TOGOR);
+        assert_eq!(fight(&game), cast(MALOSI, Some(MOB)), "the slow isn't ready");
+        game.ready.retain(|spell| *spell != MALOSI && *spell != BREATH);
+        assert_eq!(fight(&game), cast(FROST, Some(MOB)), "a nuke while they recast");
+        game.out_of_range = vec![MOB];
+        assert_eq!(fight(&game), None, "out of range");
+    }
+
+    #[test]
+    fn waits_for_the_mobs_buffs_before_debuffing_or_nuking() {
+        let mut game = fighting();
+        game.on_mob = None;
+        assert_eq!(fight(&game), None, "a debuff may be missing");
+        game.mob.as_mut().unwrap().hp_percent = 25;
+        assert_eq!(fight(&game), cast(FROST, Some(MOB)), "no debuffs at DotStopAt, so nothing to wait for");
+    }
+
+    #[test]
+    fn mana_floors_and_dot_stop() {
+        let mut game = fighting();
+        game.mana_percent = 70;
+        game.on_mob = Some(vec![TOGOR, MALOSI, BREATH]);
+        assert_eq!(fight(&game), None, "a nuke only above NukeManaMin");
+        game.on_mob = Some(vec![]);
+        assert_eq!(fight(&game), cast(TOGOR, Some(MOB)));
+        game.mana_percent = 40;
+        assert_eq!(fight(&game), None, "debuffs only above DpsManaMin");
+        game.mana_percent = 100;
+        game.mob.as_mut().unwrap().hp_percent = 25;
+        assert_eq!(fight(&game), cast(FROST, Some(MOB)), "no debuffs or DoTs at DotStopAt, but nukes");
+    }
+
+    #[test]
+    fn gives_up_on_a_line_after_resists_in_a_row() {
+        let mut game = fighting();
+        game.resists = vec![(TOGOR, 2)];
+        assert_eq!(fight(&game), cast(TOGOR, Some(MOB)), "under MaxResists");
+        game.resists = vec![(TOGOR, 3), (MALOSI, u8::MAX), (BREATH, 3)];
+        assert_eq!(fight(&game), cast(FROST, Some(MOB)), "all given up on, so a nuke");
     }
 }

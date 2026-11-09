@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use bots_core::{Action, Decision, Game, Member, Mob, Mode, Seen, aura_named, decide, plan_gems, same_name};
+use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Resists, Seen, aura_named, decide, plan_gems, same_name};
 use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
 use posse_core::{BuffEntry, flags};
 use posse_shm::now_ms;
@@ -54,6 +54,8 @@ pub struct Fight {
     pub said_left_out: bool,
     /// The last cast that didn't go off, and how, so it's said once.
     last_failure: Option<(String, CastResult)>,
+    /// Debuff and DoT resists in a row on the mob being fought.
+    pub resists: Resists,
 }
 
 impl Bots {
@@ -73,13 +75,15 @@ impl Bots {
         });
         let engaged = self.state.engaged.and_then(|id| mq.spawn(SpawnId(id))).map(|spawn| mob(&spawn, &me));
         let decision = decide(&mut self.state, &self.config, &Seen { ma_target, engaged });
-        if matches!(decision, Decision::Idle | Decision::Fight) && self.urgent(mq, &me) {
+        // The engaged mob with the MA's HP for it, when it's the MA's target.
+        let fought = engaged.map(|engaged| ma_target.filter(|mob| mob.id == engaged.id).unwrap_or(engaged));
+        if matches!(decision, Decision::Idle | Decision::Fight) && self.urgent(mq, &me, fought) {
             return;
         }
         match decision {
             Decision::Idle => self.rest(mq, &me),
             Decision::Engage(id) => self.engage(mq, &me, id, ma_target.filter(|mob| mob.id == id).map_or(0, |mob| mob.hp_percent)),
-            Decision::Fight => self.attack(mq, &me),
+            Decision::Fight => self.attack(mq, &me, fought),
             Decision::Disengage => self.disengage(mq),
         }
     }
@@ -89,6 +93,7 @@ impl Bots {
         let Some(target) = mq.spawn(SpawnId(id)) else { return };
         mq.chat(green!("[Bots] engaging {} ({hp_percent}% HP to the MA, {}% here, {:.0} away)", target.name(), target.hp_percent(), me.distance_to(&target)));
         self.state.engaged = Some(id);
+        self.fight.resists.keep_only(id);
         self.fight.next_action = None;
         // A cast on someone else goes back to its target when it ends.
         if self.fight.task.is_none() {
@@ -106,13 +111,13 @@ impl Bots {
     }
 
     /// Heals, in a fight or out; whether something was done.
-    fn urgent(&mut self, mq: &Mq<Self>, me: &Spawn<'_>) -> bool {
+    fn urgent(&mut self, mq: &Mq<Self>, me: &Spawn<'_>, fought: Option<Mob>) -> bool {
         if self.state.mode != Mode::Assist || me.is_feigning() || me.is_stunned() || self.fight.last_action.is_some_and(|at| at.elapsed() < ACTION_GAP) {
             return false;
         }
         let group = self.group(mq, me);
         let Some(class) = self.class.as_mut() else { return false };
-        let Some(action) = class.urgent(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, group)) else { return false };
+        let Some(action) = class.urgent(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, group, fought)) else { return false };
         self.act(mq, &action);
         true
     }
@@ -159,7 +164,7 @@ impl Bots {
         self.class.as_ref().is_some_and(|class| class.melee())
     }
 
-    fn attack(&mut self, mq: &Mq<Self>, me: &Spawn<'_>) {
+    fn attack(&mut self, mq: &Mq<Self>, me: &Spawn<'_>, fought: Option<Mob>) {
         let Some(id) = self.state.engaged else { return };
         // Feigning, by hand for now: anything done would stand the monk up.
         if me.is_feigning() {
@@ -180,7 +185,7 @@ impl Bots {
         }
         let group = self.group(mq, me);
         let Some(class) = self.class.as_mut() else { return };
-        let Some(action) = class.fight(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, group)) else { return };
+        let Some(action) = class.fight(&self.config, &self.state, &Seeing::new(mq, me, &self.fight, group, fought)) else { return };
         self.act(mq, &action);
     }
 
@@ -197,7 +202,7 @@ impl Bots {
             return;
         }
         let group = self.group(mq, me);
-        let seeing = Seeing::new(mq, me, &self.fight, group);
+        let seeing = Seeing::new(mq, me, &self.fight, group, None);
         let mut action = None;
         let mut left_out = None;
         if self.state.memorize
@@ -295,16 +300,44 @@ impl Bots {
         self.fight.task_spell = None;
         self.fight.landed.retain(|(_, _, at)| at.elapsed() < LANDED_HOLD);
         self.fight.blocked.retain(|(_, _, at)| at.elapsed() < BLOCKED_HOLD);
-        if result.completed() {
+        // A resisted debuff isn't on the mob: it's cast again when ready.
+        if result.is_landed() {
             self.fight.landed.push((name.to_owned(), target, Instant::now()));
         } else if result == CastResult::DidNotTakeHold {
             self.fight.blocked.push((name.to_owned(), target, Instant::now()));
+        }
+        if let Some(mob) = target.filter(|target| Some(*target) == self.state.engaged) {
+            self.count_resists(mq, name, mob, result);
         }
         let failure = (!result.completed()).then(|| (name.to_owned(), result));
         if failure.is_some() && failure != self.fight.last_failure {
             mq.chat(yellow!("[Bots] {name}: {result}"));
         }
         self.fight.last_failure = failure;
+    }
+
+    /// Counts a debuff's or DoT's resists in a row on the mob, and says once
+    /// when the mob has resisted it `MaxResists` times, or is immune, so
+    /// it's given up on that mob.
+    fn count_resists(&mut self, mq: &Mq<Self>, name: &str, mob: u32, result: CastResult) {
+        let resistible = ["debuff", "dot"].iter().any(|archetype| self.config.archetype(archetype).iter().any(|spell| spell == name));
+        let outcome = match result {
+            CastResult::Landed => Outcome::Landed,
+            CastResult::Resisted => Outcome::Resisted,
+            CastResult::Immune => Outcome::Immune,
+            _ => return,
+        };
+        if !resistible {
+            return;
+        }
+        let before = self.fight.resists.count(name, mob);
+        let after = self.fight.resists.record(name, mob, outcome);
+        let max = self.config.max_resists;
+        if before < max && after >= max {
+            let mob = mq.spawn(SpawnId(mob)).map_or_else(|| "the mob".to_owned(), |spawn| spawn.name());
+            let why = if outcome == Outcome::Immune { "it's immune".to_owned() } else { format!("resisted {max} times in a row") };
+            mq.chat(yellow!("[Bots] giving up on {name} on {mob}: {why}"));
+        }
     }
 
     /// Memorizes as a task, one gem (numbered from 1) at a time.
@@ -392,11 +425,22 @@ struct Seeing<'a> {
     /// Auras taken as up, the bot's cast, and spells landed lately.
     fight: &'a Fight,
     group: Vec<Mate>,
+    /// The mob being fought, if any.
+    mob: Option<Mob>,
 }
 
 impl<'a> Seeing<'a> {
-    fn new(mq: &'a Mq<Bots>, me: &'a Spawn<'a>, fight: &'a Fight, group: Vec<Mate>) -> Seeing<'a> {
-        Seeing { mq, me, fight, group }
+    fn new(mq: &'a Mq<Bots>, me: &'a Spawn<'a>, fight: &'a Fight, group: Vec<Mate>, mob: Option<Mob>) -> Seeing<'a> {
+        Seeing { mq, me, fight, group, mob }
+    }
+
+    /// Whether `spell` just landed on `spawn`, or wouldn't take hold on it,
+    /// so it's taken as on it until it's seen.
+    fn held(&self, spell: &str, spawn: u32) -> bool {
+        let held = |casts: &[(String, Option<u32>, Instant)], hold: Duration| {
+            casts.iter().any(|(name, target, at)| name == spell && target.is_none_or(|target| target == spawn) && at.elapsed() < hold)
+        };
+        held(&self.fight.landed, LANDED_HOLD) || held(&self.fight.blocked, BLOCKED_HOLD)
     }
 }
 
@@ -481,10 +525,7 @@ impl Game for Seeing<'_> {
 
     fn buff_left(&self, spawn: u32, spell: &str) -> Option<Duration> {
         // Just landed, or wouldn't take hold: taken as on, with all its time.
-        let held = |casts: &[(String, Option<u32>, Instant)], hold: Duration| {
-            casts.iter().any(|(name, target, at)| name == spell && target.is_none_or(|target| target == spawn) && at.elapsed() < hold)
-        };
-        if held(&self.fight.landed, LANDED_HOLD) || held(&self.fight.blocked, BLOCKED_HOLD) {
+        if self.held(spell, spawn) {
             return Some(Duration::MAX);
         }
         let buffs = self.group.iter().find_map(|mate| match mate.member.pet {
@@ -504,5 +545,33 @@ impl Game for Seeing<'_> {
         let Some((_, spell)) = memorized(self.mq, spell) else { return false };
         let reach = if spell.range() > 0.0 { spell.range() } else { spell.ae_range() };
         self.mq.spawn(SpawnId(spawn)).is_some_and(|spawn| reach <= 0.0 || self.me.distance_to(&spawn) <= reach)
+    }
+
+    fn mana_percent(&self) -> i32 {
+        match (self.mq.mana_current(), self.mq.mana_max()) {
+            (Some(current), Some(max)) if max > 0 => (i64::from(current) * 100 / i64::from(max)) as i32,
+            _ => 0,
+        }
+    }
+
+    fn mob(&self) -> Option<Mob> {
+        self.mob
+    }
+
+    fn on_mob(&self, spell: &str) -> Option<bool> {
+        let mob = self.mob?.id;
+        if self.held(spell, mob) {
+            return Some(true);
+        }
+        // Its buffs are seen only while it's targeted.
+        if self.mq.target().is_none_or(|target| target.id().0 != mob) || !self.mq.target_buffs_populated() {
+            return None;
+        }
+        let me = self.me.name();
+        Some(self.mq.target_buffs().any(|buff| same_name(spell, &buff.name()) && buff.caster().eq_ignore_ascii_case(&me)))
+    }
+
+    fn resists(&self, spell: &str) -> u8 {
+        self.mob.map_or(0, |mob| self.fight.resists.count(spell, mob.id))
     }
 }

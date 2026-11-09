@@ -45,6 +45,15 @@ pub struct Config {
     pub group_hot_count: u8,
     /// Cast a buff again with this little left on it (`RebuffAt`, seconds).
     pub rebuff_at: Duration,
+    /// Debuff and DoT only with mana above this % (`DpsManaMin`).
+    pub dps_mana_min: u8,
+    /// Debuff and DoT only a mob above this HP% (`DotStopAt`).
+    pub dot_stop_at: u8,
+    /// Give up on a debuff or DoT a mob resists this many times in a row
+    /// (`MaxResists`).
+    pub max_resists: u8,
+    /// Nuke only with mana above this % (`NukeManaMin`).
+    pub nuke_mana_min: u8,
     /// By lowercase name, since INI sections ignore case.
     pub(crate) archetypes: BTreeMap<String, Vec<String>>,
 }
@@ -61,6 +70,10 @@ impl Default for Config {
             group_hot_at: 85,
             group_hot_count: 2,
             rebuff_at: Duration::from_secs(6),
+            dps_mana_min: 40,
+            dot_stop_at: 25,
+            max_resists: 3,
+            nuke_mana_min: 70,
             archetypes: BTreeMap::new(),
         }
     }
@@ -123,6 +136,10 @@ impl Config {
             "GroupHotAt" => self.group_hot_at.to_string(),
             "GroupHotCount" => self.group_hot_count.to_string(),
             "RebuffAt" => self.rebuff_at.as_secs().to_string(),
+            "DpsManaMin" => self.dps_mana_min.to_string(),
+            "DotStopAt" => self.dot_stop_at.to_string(),
+            "MaxResists" => self.max_resists.to_string(),
+            "NukeManaMin" => self.nuke_mana_min.to_string(),
             _ => return None,
         })
     }
@@ -132,6 +149,8 @@ impl Config {
     pub fn set(&mut self, key: &str, value: &str) -> Result<&'static str, String> {
         let name = canonical(key).ok_or_else(|| format!("{key} isn't a setting: {}", SETTINGS.join(", ")))?;
         let percent = |field: &mut u8| value.parse().ok().filter(|percent| (1..=100).contains(percent)).map(|percent| *field = percent).ok_or("a percent from 1 to 100");
+        // 0 for no floor.
+        let mana = |field: &mut u8| value.parse().ok().filter(|percent| *percent <= 100).map(|percent| *field = percent).ok_or("a percent from 0 to 100");
         let set = match key.to_ascii_lowercase().as_str() {
             "mode" => value.parse().map(|mode| self.mode = mode).map_err(|()| "off, manual or assist"),
             "follow" => switch(value).map(|on| self.follow = on).ok_or("on or off"),
@@ -141,6 +160,10 @@ impl Config {
             "grouphotat" => percent(&mut self.group_hot_at),
             "grouphotcount" => value.parse().ok().filter(|count| (1..=6).contains(count)).map(|count| self.group_hot_count = count).ok_or("a count from 1 to 6"),
             "rebuffat" => value.parse().ok().filter(|seconds| *seconds <= 600).map(|seconds| self.rebuff_at = Duration::from_secs(seconds)).ok_or("seconds from 0 to 600"),
+            "dpsmanamin" => mana(&mut self.dps_mana_min),
+            "dotstopat" => mana(&mut self.dot_stop_at),
+            "maxresists" => value.parse().ok().filter(|count| (1..=10).contains(count)).map(|count| self.max_resists = count).ok_or("a count from 1 to 10"),
+            "nukemanamin" => mana(&mut self.nuke_mana_min),
             "campradius" => value.parse::<f32>().ok().filter(|radius| *radius > 0.0 && radius.is_finite()).map(|radius| self.camp_radius = radius).ok_or("a distance above 0"),
             _ => unreachable!("{name} is in SETTINGS but not set"),
         };
@@ -149,7 +172,7 @@ impl Config {
 }
 
 /// The `[Settings]` keys, as the INI spells them.
-pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt"];
+pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin"];
 
 fn canonical(key: &str) -> Option<&'static str> {
     SETTINGS.iter().copied().find(|name| name.eq_ignore_ascii_case(key))
@@ -238,6 +261,12 @@ mod tests {
         assert_eq!(config.rebuff_at, Duration::from_secs(20));
         let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("HealAt", "101"), ("GroupHotCount", "0"), ("RebuffAt", "-1")])])]);
         assert_eq!(problems, ["Shaman.ini: [Settings] HealAt=101: a percent from 1 to 100", "Shaman.ini: [Settings] GroupHotCount=0: a count from 1 to 6", "Shaman.ini: [Settings] RebuffAt=-1: seconds from 0 to 600"]);
+        let dps = layer("Shaman.ini", &[("Settings", &[("DpsManaMin", "0"), ("DotStopAt", "10"), ("MaxResists", "2"), ("NukeManaMin", "100")])]);
+        let (config, problems) = Config::from_layers(&[dps]);
+        assert_eq!(problems, Vec::<String>::new());
+        assert_eq!((config.dps_mana_min, config.dot_stop_at, config.max_resists, config.nuke_mana_min), (0, 10, 2, 100));
+        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("NukeManaMin", "101"), ("MaxResists", "0")])])]);
+        assert_eq!(problems, ["Shaman.ini: [Settings] NukeManaMin=101: a percent from 0 to 100", "Shaman.ini: [Settings] MaxResists=0: a count from 1 to 10"]);
     }
 
     #[test]
@@ -252,7 +281,7 @@ mod tests {
             "Monk.ini: [Settings] Follow=maybe: on or off",
             "Monk.ini: [Settings] AssistAt=0: a percent from 1 to 100",
             "Monk.ini: [Settings] CampRadius=-5: a distance above 0",
-            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt",
+            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin",
             "Monk.ini: [ability.offense] first=Flying Kick: entries are numbered 1=, 2=..., best first",
         ]);
         let defaults = Config::default();

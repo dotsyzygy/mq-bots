@@ -112,6 +112,7 @@ impl Bots {
                 self.load(mq);
                 self.fight.given_up_auras.clear();
                 self.fight.given_up_spells.clear();
+                self.fight.resists.clear();
                 self.fight.said_left_out = false;
                 self.state.memorize = true;
                 if let Some(class) = &self.class {
