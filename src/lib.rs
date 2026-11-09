@@ -5,7 +5,7 @@ mod posse;
 
 use std::path::{Path, PathBuf};
 
-use bots_core::{Class, Command, Config, Layer, Mode, State, USAGE, for_class, parse};
+use bots_core::{Class, Command, Config, Layer, Mode, SETTINGS_SECTION, State, USAGE, for_class, parse};
 use mq_emu::{GameState, Ini, IniError, Mq, Plugin, green, red, yellow};
 
 const COMMAND: &str = "/bots";
@@ -81,7 +81,9 @@ impl Bots {
             Command::Help => mq.chat(green!("{USAGE}")),
             Command::Mode(mode) => {
                 self.state.mode = mode;
+                self.config.mode = mode;
                 mq.chat(green!("[Bots] mode {mode}"));
+                self.save_setting(mq, "Mode", mode);
             }
             Command::Attack if self.state.mode == Mode::Off => mq.chat(yellow!("[Bots] mode is off")),
             Command::Attack => {
@@ -160,6 +162,18 @@ impl Bots {
     fn check_archetypes(&self, mq: &Mq<Self>, known: &[&str]) {
         for name in self.config.unknown_archetypes(known) {
             mq.chat(yellow!("[Bots] [{name}] isn't an archetype this class reads: {}", known.join(", ")));
+        }
+    }
+
+    /// Writes a setting to the character's INI (`[Settings]`), so it's what
+    /// the character starts with next time; it overrides the class's INI.
+    fn save_setting(&self, mq: &Mq<Self>, key: &str, value: impl std::fmt::Display) {
+        if self.loaded_for.is_empty() {
+            return;
+        }
+        let path = config_path(mq, &mq.server_name().unwrap_or_default(), &self.loaded_for);
+        if let Err(e) = Ini::new(&path).and_then(|ini| ini.set(SETTINGS_SECTION, key, value)) {
+            mq.chat(red!("[Bots] couldn't save {key} to config/{}: {e}", file_name(&path)));
         }
     }
 

@@ -23,7 +23,7 @@ Then `/plugin MQ2Bots` in game, with MQ2Posse, and MQ2MoveUtils for sticking.
 |---|---|
 | `/bots` | Show this bot's mode, flags and archetypes |
 | `/bots help` | Show the usage |
-| `/bots mode <off\|manual\|assist>` | Set this bot's mode |
+| `/bots mode <off\|manual\|assist>` | Set this bot's mode, and save it as `Mode=` in the character's INI so it starts in it next time |
 | `/bots attack` | Engage the MA's target now, ignoring assist-at and the camp radius; it also resumes |
 | `/bots backoff` / `/bots resume` | Disengage and stop auto-engaging / start again |
 | `/bots burn [off]` | Start or end a burn phase |
@@ -44,7 +44,7 @@ The plugin reads two files from MacroQuest's config folder when a character ente
 
 ```ini
 [Settings]
-; off, manual (the default) or assist
+; off, manual (the default) or assist; /bots mode saves it in the character's INI
 Mode=assist
 ; Engage the MA's target at or below this HP% (default 95)
 AssistAt=95
