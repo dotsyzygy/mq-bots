@@ -71,7 +71,3 @@ Monk:
 
 1. Burn phase, Mend, Feign Death (including feigning again when knocked out of it while FD still applies).
 2. Follow (backoff is done). Test in a group of 4.
-
-Shaman:
-
-- S1. Try it in game with the group.
