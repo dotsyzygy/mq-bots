@@ -79,12 +79,12 @@ impl Bots {
         match command {
             Command::Status => self.status(mq),
             Command::Help => mq.chat(green!("{USAGE}")),
-            Command::Mode(mode) => {
-                self.state.mode = mode;
-                self.config.mode = mode;
-                mq.chat(green!("[Bots] mode {mode}"));
-                self.save_setting(mq, "Mode", mode);
+            Command::Mode(mode) => self.set_setting(mq, "Mode", &mode.to_string()),
+            Command::Set(None) => {
+                let settings: Vec<String> = self.config.settings().into_iter().map(|(key, value)| format!("{key}={value}")).collect();
+                mq.chat(green!("[Bots] {}", settings.join(", ")));
             }
+            Command::Set(Some((key, value))) => self.set_setting(mq, &key, &value),
             Command::Attack if self.state.mode == Mode::Off => mq.chat(yellow!("[Bots] mode is off")),
             Command::Attack => {
                 self.state.attack_requested = true;
@@ -103,8 +103,8 @@ impl Bots {
                 mq.chat(green!("[Bots] burn {}", if on { "on" } else { "off" }));
             }
             Command::Follow(on) => {
-                self.state.following = on.unwrap_or(!self.state.following);
-                mq.chat(green!("[Bots] follow {}", if self.state.following { "on" } else { "off" }));
+                let on = on.unwrap_or(!self.state.following);
+                self.set_setting(mq, "Follow", if on { "on" } else { "off" });
             }
             // Commands keep what they set; only the INI's values change.
             Command::Reload if self.loaded_for.is_empty() => mq.chat(yellow!("[Bots] nothing to reload until a character is in game")),
@@ -165,14 +165,23 @@ impl Bots {
         }
     }
 
-    /// Writes a setting to the character's INI (`[Settings]`), so it's what
-    /// the character starts with next time; it overrides the class's INI.
-    fn save_setting(&self, mq: &Mq<Self>, key: &str, value: impl std::fmt::Display) {
+    /// Sets a `[Settings]` key now and writes it to the character's INI, so
+    /// it's kept through zoning, camping and `/bots reload`; the
+    /// character's INI overrides the class's.
+    fn set_setting(&mut self, mq: &Mq<Self>, key: &str, value: &str) {
+        let key = match self.config.set(key, value) {
+            Ok(key) => key,
+            Err(e) => return mq.chat(red!("[Bots] {e}")),
+        };
+        self.state.mode = self.config.mode;
+        self.state.following = self.config.follow;
+        let value = self.config.setting(key).unwrap_or_default();
+        mq.chat(green!("[Bots] {key}={value}"));
         if self.loaded_for.is_empty() {
-            return;
+            return mq.chat(yellow!("[Bots] not saved until a character is in game"));
         }
         let path = config_path(mq, &mq.server_name().unwrap_or_default(), &self.loaded_for);
-        if let Err(e) = Ini::new(&path).and_then(|ini| ini.set(SETTINGS_SECTION, key, value)) {
+        if let Err(e) = Ini::new(&path).and_then(|ini| ini.set(SETTINGS_SECTION, key, &value)) {
             mq.chat(red!("[Bots] couldn't save {key} to config/{}: {e}", file_name(&path)));
         }
     }

@@ -105,7 +105,32 @@ impl Config {
         self.archetypes.iter().map(|(name, entries)| (name.as_str(), entries.as_slice()))
     }
 
-    fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
+    /// Every `[Settings]` key with its value, as the INI writes it.
+    pub fn settings(&self) -> Vec<(&'static str, String)> {
+        SETTINGS.iter().map(|key| (*key, self.setting(key).unwrap_or_default())).collect()
+    }
+
+    /// A setting's value as the INI writes it, by any case of its key.
+    pub fn setting(&self, key: &str) -> Option<String> {
+        let on_off = |on: bool| if on { "on" } else { "off" }.to_owned();
+        Some(match canonical(key)? {
+            "Mode" => self.mode.to_string(),
+            "Follow" => on_off(self.follow),
+            "AssistAt" => self.assist_at.to_string(),
+            "CampRadius" => self.camp_radius.to_string(),
+            "HealAt" => self.heal_at.to_string(),
+            "EmergencyAt" => self.emergency_at.to_string(),
+            "GroupHotAt" => self.group_hot_at.to_string(),
+            "GroupHotCount" => self.group_hot_count.to_string(),
+            "RebuffAt" => self.rebuff_at.as_secs().to_string(),
+            _ => return None,
+        })
+    }
+
+    /// Sets a `[Settings]` key, by any case, as the INI would. Returns the
+    /// key as the INI spells it; `Err` says what's wrong, for chat.
+    pub fn set(&mut self, key: &str, value: &str) -> Result<&'static str, String> {
+        let name = canonical(key).ok_or_else(|| format!("{key} isn't a setting: {}", SETTINGS.join(", ")))?;
         let percent = |field: &mut u8| value.parse().ok().filter(|percent| (1..=100).contains(percent)).map(|percent| *field = percent).ok_or("a percent from 1 to 100");
         let set = match key.to_ascii_lowercase().as_str() {
             "mode" => value.parse().map(|mode| self.mode = mode).map_err(|()| "off, manual or assist"),
@@ -117,10 +142,17 @@ impl Config {
             "grouphotcount" => value.parse().ok().filter(|count| (1..=6).contains(count)).map(|count| self.group_hot_count = count).ok_or("a count from 1 to 6"),
             "rebuffat" => value.parse().ok().filter(|seconds| *seconds <= 600).map(|seconds| self.rebuff_at = Duration::from_secs(seconds)).ok_or("seconds from 0 to 600"),
             "campradius" => value.parse::<f32>().ok().filter(|radius| *radius > 0.0 && radius.is_finite()).map(|radius| self.camp_radius = radius).ok_or("a distance above 0"),
-            _ => return Err(format!("{key} isn't a setting")),
+            _ => unreachable!("{name} is in SETTINGS but not set"),
         };
-        set.map_err(|expected| format!("{key}={value}: {expected}"))
+        set.map(|()| name).map_err(|expected| format!("{name}={value}: {expected}"))
     }
+}
+
+/// The `[Settings]` keys, as the INI spells them.
+pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt"];
+
+fn canonical(key: &str) -> Option<&'static str> {
+    SETTINGS.iter().copied().find(|name| name.eq_ignore_ascii_case(key))
 }
 
 /// Entries in their numbered order. Empty values are left out.
@@ -220,11 +252,29 @@ mod tests {
             "Monk.ini: [Settings] Follow=maybe: on or off",
             "Monk.ini: [Settings] AssistAt=0: a percent from 1 to 100",
             "Monk.ini: [Settings] CampRadius=-5: a distance above 0",
-            "Monk.ini: [Settings] Speed isn't a setting",
+            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt",
             "Monk.ini: [ability.offense] first=Flying Kick: entries are numbered 1=, 2=..., best first",
         ]);
         let defaults = Config::default();
         assert_eq!((config.mode, config.follow, config.assist_at, config.camp_radius), (defaults.mode, defaults.follow, defaults.assist_at, defaults.camp_radius));
         assert_eq!(config.archetype("ability.offense"), ["Tiger Claw"]);
+    }
+
+    #[test]
+    fn writes_back_every_setting_as_it_reads_it() {
+        let mut config = Config::default();
+        assert_eq!(config.set("healat", "60"), Ok("HealAt"));
+        assert_eq!(config.set("Follow", "ON"), Ok("Follow"));
+        assert_eq!(config.set("HealAt", "0"), Err("HealAt=0: a percent from 1 to 100".to_owned()));
+        assert_eq!(config.heal_at, 60, "a bad value changes nothing");
+        assert_eq!(config.setting("HEALAT"), Some("60".to_owned()));
+        assert_eq!(config.setting("Speed"), None);
+        let settings = config.settings();
+        assert_eq!(settings.iter().map(|(key, _)| *key).collect::<Vec<_>>(), SETTINGS);
+        let mut again = Config::default();
+        for (key, value) in &settings {
+            assert_eq!(again.set(key, value), Ok(*key), "{key}={value} reads back");
+        }
+        assert_eq!(again, config);
     }
 }

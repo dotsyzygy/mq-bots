@@ -2,10 +2,13 @@
 
 use crate::Mode;
 
-pub const USAGE: &str = "usage: /bots [help | mode off|manual|assist | attack | backoff | resume | burn [off] | follow [on|off] | reload]";
+pub const USAGE: &str = "usage: /bots [help | mode off|manual|assist | attack | backoff | resume | burn [off] | follow [on|off] | set [<setting> <value>] | reload]";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// `set <setting> <value>` sets an INI setting and saves it; `set` alone
+    /// lists them.
+    Set(Option<(String, String)>),
     /// No arguments: show this bot's state.
     Status,
     Help,
@@ -25,6 +28,14 @@ pub enum Command {
 pub fn parse(args: &str) -> Result<Command, String> {
     let mut words = args.split_whitespace();
     let command = words.next().unwrap_or("").to_ascii_lowercase();
+    if command == "set" {
+        return match (words.next(), words.next(), words.next()) {
+            (None, ..) => Ok(Command::Set(None)),
+            (Some(key), Some(value), None) => Ok(Command::Set(Some((key.to_owned(), value.to_owned())))),
+            (_, _, Some(extra)) => Err(format!("unexpected \"{extra}\"")),
+            (Some(_), None, _) => Err("usage: /bots set [<setting> <value>]".into()),
+        };
+    }
     let arg = words.next().map(str::to_ascii_lowercase);
     if let Some(extra) = words.next() {
         return Err(format!("unexpected \"{extra}\""));
@@ -73,6 +84,8 @@ mod tests {
             ("follow on", Command::Follow(Some(true))),
             ("follow OFF", Command::Follow(Some(false))),
             ("reload", Command::Reload),
+            ("set", Command::Set(None)),
+            ("SET HealAt 60", Command::Set(Some(("HealAt".into(), "60".into())))),
         ];
         for (args, expected) in cases {
             assert_eq!(parse(args), Ok(expected), "{args:?}");
@@ -89,6 +102,8 @@ mod tests {
             ("follow me", "usage: /bots follow [on|off]"),
             ("attack now", "attack takes nothing after it, not \"now\""),
             ("burn off now", "unexpected \"now\""),
+            ("set HealAt", "usage: /bots set [<setting> <value>]"),
+            ("set HealAt 60 now", "unexpected \"now\""),
         ];
         for (args, expected) in cases {
             assert_eq!(parse(args), Err(expected.to_owned()), "{args:?}");

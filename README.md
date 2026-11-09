@@ -23,12 +23,13 @@ Then `/plugin MQ2Bots` in game, with MQ2Posse, and MQ2MoveUtils for sticking.
 |---|---|
 | `/bots` | Show this bot's mode, flags and archetypes |
 | `/bots help` | Show the usage |
-| `/bots mode <off\|manual\|assist>` | Set this bot's mode, and save it as `Mode=` in the character's INI so it starts in it next time |
+| `/bots mode <off\|manual\|assist>` | Set this bot's mode (saved, like `/bots set Mode`) |
 | `/bots attack` | Engage the MA's target now, ignoring assist-at and the camp radius; it also resumes |
 | `/bots backoff` / `/bots resume` | Disengage and stop auto-engaging / start again |
 | `/bots burn [off]` | Start or end a burn phase |
-| `/bots follow [on\|off]` | Follow the driver; alone, it toggles |
-| `/bots reload` | Reread the INI; what commands set is kept |
+| `/bots follow [on\|off]` | Follow the driver; alone, it toggles (saved, like `/bots set Follow`) |
+| `/bots set [<setting> <value>]` | Set any `[Settings]` key (`/bots set HealAt 60`) and save it in the character's INI, `MQ2Bots_<server>_<name>.ini`, so it's kept through zoning, camping and `/bots reload`; alone, it lists every setting's value |
+| `/bots reload` | Reread the INI |
 
 Send them to every bot with `/pc` through Posse.
 
@@ -44,7 +45,7 @@ The plugin reads two files from MacroQuest's config folder when a character ente
 
 ```ini
 [Settings]
-; off, manual (the default) or assist; /bots mode saves it in the character's INI
+; off, manual (the default) or assist; /bots set saves settings in the character's INI
 Mode=assist
 ; Engage the MA's target at or below this HP% (default 95)
 AssistAt=95
