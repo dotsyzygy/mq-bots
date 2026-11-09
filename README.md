@@ -71,6 +71,11 @@ DpsManaMin=40
 DotStopAt=25
 MaxResists=3
 NukeManaMin=70
+; Anyone with mana: below MedAt% mana (default 80; 0 never), sit to med until
+; full whenever there's nothing to do and not moving; casters in a fight too,
+; between casts. While medding, short buffs aren't cast out of a fight, but
+; what can't wait (heals, memorizing, pets) still is.
+MedAt=80
 
 ; Every other section is an archetype: numbered entries, best first.
 ; The bot uses the first one the character has and can use.

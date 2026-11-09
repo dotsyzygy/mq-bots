@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Resists, Seen, aura_named, decide, follow_target, plan_gems, same_name};
+use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Resists, Seen, aura_named, decide, follow_target, medding, plan_gems, same_name, sit};
 use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
 use posse_core::{BuffEntry, flags};
 use posse_shm::now_ms;
@@ -38,6 +38,9 @@ pub struct Fight {
     warned_follow: bool,
     /// The spawn `/afollow` was last sent for, until `/afollow off`.
     pub followed: Option<u32>,
+    /// Sat down to med, so it's this plugin's to stand up again; one sat
+    /// by hand is left sitting.
+    sat: bool,
     /// The aura last used, and when.
     last_aura: Option<(String, Instant)>,
     pub given_up_auras: Vec<String>,
@@ -70,6 +73,7 @@ impl Bots {
         }
         self.fight.looked = Some(Instant::now());
         let Some(me) = mq.me() else { return };
+        self.state.medding = medding(&self.config, self.state.medding, mana_percent(mq));
         let ma = main_assist(mq).filter(|ma| ma.id() != me.id());
         let ma_target = ma.as_ref().and_then(|ma| {
             let status = self.posse.as_mut()?.status(&ma.name())?;
@@ -85,14 +89,34 @@ impl Bots {
         let busy = me.is_feigning() || me.casting().is_some() || self.fight.task.is_some();
         let decided_engage = matches!(decision, Decision::Engage(_));
         self.follow(mq, if decided_engage { None } else { follow_target(&self.state, ma.as_ref().map(|ma| ma.id().0), busy) });
+        // About to be moved off by following.
+        let leaving = self.fight.followed.is_some() && ma.as_ref().is_some_and(|ma| ma.is_moving());
+        if self.fight.sat && (!self.state.medding || leaving) {
+            self.stand(mq);
+        }
         if matches!(decision, Decision::Idle | Decision::Fight) && self.urgent(mq, &me, fought) {
             return;
         }
+        let acted = self.fight.last_action;
         match decision {
             Decision::Idle => self.rest(mq, &me),
             Decision::Engage(id) => self.engage(mq, &me, id, ma_target.filter(|mob| mob.id == id).map_or(0, |mob| mob.hp_percent)),
             Decision::Fight => self.attack(mq, &me, fought),
             Decision::Disengage => self.disengage(mq),
+        }
+        let idle = self.fight.last_action == acted && self.fight.task.is_none() && !leaving && !me.is_moving() && me.casting().is_none() && !me.is_feigning() && !me.is_stunned();
+        if me.is_standing() && sit(&self.state, idle, self.state.engaged.is_some(), self.melee()) {
+            mq.set_sitting(true);
+            self.fight.sat = true;
+        }
+    }
+
+    /// Stands up from medding, or from sitting by hand for something that
+    /// needs it.
+    fn stand(&mut self, mq: &Mq<Self>) {
+        self.fight.sat = false;
+        if mq.me().is_some_and(|me| me.is_sitting()) {
+            mq.set_sitting(false);
         }
     }
 
@@ -101,6 +125,7 @@ impl Bots {
         let Some(target) = mq.spawn(SpawnId(id)) else { return };
         mq.chat(green!("[Bots] engaging {} ({hp_percent}% HP to the MA, {}% here, {:.0} away)", target.name(), target.hp_percent(), me.distance_to(&target)));
         self.state.engaged = Some(id);
+        self.stand(mq);
         self.fight.resists.keep_only(id);
         self.fight.next_action = None;
         // A cast on someone else goes back to its target when it ends.
@@ -423,6 +448,14 @@ fn main_assist<'a>(mq: &'a Mq<Bots>) -> Option<Spawn<'a>> {
     mq.group()?.with_role(GroupRole::MainAssist)?.spawn()
 }
 
+/// Your mana as a percent of your most; `None` without mana.
+fn mana_percent(mq: &Mq<Bots>) -> Option<i32> {
+    match (mq.mana_current(), mq.mana_max()) {
+        (Some(current), Some(max)) if max > 0 => Some((i64::from(current) * 100 / i64::from(max)) as i32),
+        _ => None,
+    }
+}
+
 fn mob(spawn: &Spawn<'_>, me: &Spawn<'_>) -> Mob {
     Mob { id: spawn.id().0, is_npc: spawn.is_npc(), hp_percent: spawn.hp_percent(), distance: spawn.distance_to(me) }
 }
@@ -578,10 +611,7 @@ impl Game for Seeing<'_> {
     }
 
     fn mana_percent(&self) -> i32 {
-        match (self.mq.mana_current(), self.mq.mana_max()) {
-            (Some(current), Some(max)) if max > 0 => (i64::from(current) * 100 / i64::from(max)) as i32,
-            _ => 0,
-        }
+        mana_percent(self.mq).unwrap_or(0)
     }
 
     fn mob(&self) -> Option<Mob> {

@@ -61,7 +61,7 @@ Heals, melee buffs, memorizing, debuffs, DoTs and nukes are done. Long-duration 
 
 Known problem, melee buffs: a buff that lands but is then overwritten by another buff on the target is cast again every time it's ready, forever. Seen with Champion, a group spell with a long cooldown. Its cast lands, so neither the 6-second hold nor the `DidNotTakeHold` hold applies, and once the hold ends Posse shows it missing. Fix idea: a buff that landed but isn't seen on the target after Posse has caught up was overwritten, so stop casting it on that target for a while (or until `/bots reload`) and say so in chat once. Related: a group buff like Champion should be cast once for the group (no target), when it's missing on enough melee members, not once per member.
 
-Later: long-duration buffs (memorized for the cast in a spare gem, then swapped back), medding, the shaman's own pet, an INI switch for melee.
+Later: long-duration buffs (memorized for the cast in a spare gem, then swapped back), the shaman's own pet, an INI switch for melee.
 
 Cannibalize, to come: the shaman's own way of trading health for mana (the Cannibalize spells, and the Cannibalization AA). Cast at about 50% mana (a `CanniAt` setting), from a `canni` archetype that can list the AA and the spells, best first. It has to keep enough HP not to need healing itself, so it waits while HP is low and comes after heals.
 

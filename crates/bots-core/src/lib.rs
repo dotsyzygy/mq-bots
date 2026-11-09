@@ -5,6 +5,7 @@ mod commands;
 mod config;
 mod engage;
 mod follow;
+mod med;
 mod resists;
 mod state;
 
@@ -16,6 +17,7 @@ pub use commands::{Command, USAGE, parse};
 pub use config::{Config, Layer, SETTINGS_SECTION};
 pub use engage::{Decision, Mob, Seen, decide};
 pub use follow::follow_target;
+pub use med::{medding, sit};
 pub use resists::{Outcome, Resists};
 pub use state::State;
 

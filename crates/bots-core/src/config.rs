@@ -54,6 +54,8 @@ pub struct Config {
     pub max_resists: u8,
     /// Nuke only with mana above this % (`NukeManaMin`).
     pub nuke_mana_min: u8,
+    /// Sit to med below this mana %, until full; 0 never meds (`MedAt`).
+    pub med_at: u8,
     /// By lowercase name, since INI sections ignore case.
     pub(crate) archetypes: BTreeMap<String, Vec<String>>,
 }
@@ -74,6 +76,7 @@ impl Default for Config {
             dot_stop_at: 25,
             max_resists: 3,
             nuke_mana_min: 70,
+            med_at: 80,
             archetypes: BTreeMap::new(),
         }
     }
@@ -140,6 +143,7 @@ impl Config {
             "DotStopAt" => self.dot_stop_at.to_string(),
             "MaxResists" => self.max_resists.to_string(),
             "NukeManaMin" => self.nuke_mana_min.to_string(),
+            "MedAt" => self.med_at.to_string(),
             _ => return None,
         })
     }
@@ -164,6 +168,7 @@ impl Config {
             "dotstopat" => mana(&mut self.dot_stop_at),
             "maxresists" => value.parse().ok().filter(|count| (1..=10).contains(count)).map(|count| self.max_resists = count).ok_or("a count from 1 to 10"),
             "nukemanamin" => mana(&mut self.nuke_mana_min),
+            "medat" => mana(&mut self.med_at),
             "campradius" => value.parse::<f32>().ok().filter(|radius| *radius > 0.0 && radius.is_finite()).map(|radius| self.camp_radius = radius).ok_or("a distance above 0"),
             _ => unreachable!("{name} is in SETTINGS but not set"),
         };
@@ -172,7 +177,7 @@ impl Config {
 }
 
 /// The `[Settings]` keys, as the INI spells them.
-pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin"];
+pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin", "MedAt"];
 
 fn canonical(key: &str) -> Option<&'static str> {
     SETTINGS.iter().copied().find(|name| name.eq_ignore_ascii_case(key))
@@ -267,6 +272,11 @@ mod tests {
         assert_eq!((config.dps_mana_min, config.dot_stop_at, config.max_resists, config.nuke_mana_min), (0, 10, 2, 100));
         let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("NukeManaMin", "101"), ("MaxResists", "0")])])]);
         assert_eq!(problems, ["Shaman.ini: [Settings] NukeManaMin=101: a percent from 0 to 100", "Shaman.ini: [Settings] MaxResists=0: a count from 1 to 10"]);
+        assert_eq!(Config::default().med_at, 80);
+        let (config, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("MedAt", "0")])])]);
+        assert_eq!((config.med_at, problems), (0, vec![]), "0 never meds");
+        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("MedAt", "101")])])]);
+        assert_eq!(problems, ["Shaman.ini: [Settings] MedAt=101: a percent from 0 to 100"]);
     }
 
     #[test]
@@ -281,7 +291,7 @@ mod tests {
             "Monk.ini: [Settings] Follow=maybe: on or off",
             "Monk.ini: [Settings] AssistAt=0: a percent from 1 to 100",
             "Monk.ini: [Settings] CampRadius=-5: a distance above 0",
-            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin",
+            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin, MedAt",
             "Monk.ini: [ability.offense] first=Flying Kick: entries are numbered 1=, 2=..., best first",
         ]);
         let defaults = Config::default();

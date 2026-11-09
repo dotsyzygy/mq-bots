@@ -129,6 +129,8 @@ pub trait Class {
     /// The next thing to do against [`State::engaged`], if anything.
     fn fight(&mut self, config: &Config, state: &State, game: &dyn Game) -> Option<Action>;
     /// The next thing to do out of combat (buffs, auras), if anything.
+    /// While [`State::medding`], only what can't wait (a pet and its gear,
+    /// long buffs), not short buffs a fight would cast anyway.
     fn rest(&mut self, config: &Config, state: &State, game: &dyn Game) -> Option<Action>;
 }
 

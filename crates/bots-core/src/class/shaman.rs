@@ -66,9 +66,10 @@ impl Class for Shaman {
         (game.buff_left(tank.id, hot).is_none() && game.spell_ready(hot)).then(|| Action::Cast { spell: hot.to_owned(), target: Some(tank.id) })
     }
 
-    /// Melee buffs, kept up between fights too.
-    fn rest(&mut self, config: &Config, _state: &State, game: &dyn Game) -> Option<Action> {
-        if game.casting() {
+    /// Melee buffs, kept up between fights too, but not while medding:
+    /// they're short, and a fight casts them.
+    fn rest(&mut self, config: &Config, state: &State, game: &dyn Game) -> Option<Action> {
+        if game.casting() || state.medding {
             return None;
         }
         melee_buff(config, game)
@@ -342,6 +343,10 @@ mod tests {
         game.member_buffs.clear();
         game.casting = true;
         assert_eq!(rest(&game), None, "a cast is under way");
+        game.casting = false;
+        let medding = State { medding: true, ..State::new(&Config::default()) };
+        assert_eq!(Shaman.rest(&config(), &medding, &game), None, "not while medding: a fight casts them");
+        assert_eq!(fight(&game), cast(PANTHER, Some(TANK)), "in a fight, still");
     }
 
     const MOB: u32 = 50;
