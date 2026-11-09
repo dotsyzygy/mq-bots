@@ -41,6 +41,9 @@ pub struct Config {
     pub emergency_at: u8,
     /// Members below this HP% count toward a group HoT (`GroupHotAt`).
     pub group_hot_at: u8,
+    /// Put the single-target HoT on anyone, the tank included, below this
+    /// HP% (`HotAt`).
+    pub hot_at: u8,
     /// How many members below `GroupHotAt` it takes (`GroupHotCount`).
     pub group_hot_count: u8,
     /// Cast a buff again with this little left on it (`RebuffAt`, seconds).
@@ -72,6 +75,7 @@ impl Default for Config {
             heal_at: 70,
             emergency_at: 50,
             group_hot_at: 85,
+            hot_at: 80,
             group_hot_count: 2,
             rebuff_at: Duration::from_secs(6),
             dps_mana_min: 40,
@@ -137,6 +141,7 @@ impl Config {
             "HealAt" => self.heal_at.to_string(),
             "EmergencyAt" => self.emergency_at.to_string(),
             "GroupHotAt" => self.group_hot_at.to_string(),
+            "HotAt" => self.hot_at.to_string(),
             "GroupHotCount" => self.group_hot_count.to_string(),
             "RebuffAt" => self.rebuff_at.as_secs().to_string(),
             "DpsManaMin" => self.dps_mana_min.to_string(),
@@ -163,6 +168,7 @@ impl Config {
             "healat" => percent(&mut self.heal_at),
             "emergencyat" => percent(&mut self.emergency_at),
             "grouphotat" => percent(&mut self.group_hot_at),
+            "hotat" => percent(&mut self.hot_at),
             "grouphotcount" => value.parse().ok().filter(|count| (1..=6).contains(count)).map(|count| self.group_hot_count = count).ok_or("a count from 1 to 6"),
             "rebuffat" => value.parse().ok().filter(|seconds| *seconds <= 600).map(|seconds| self.rebuff_at = Duration::from_secs(seconds)).ok_or("seconds from 0 to 600"),
             "dpsmanamin" => mana(&mut self.dps_mana_min),
@@ -179,7 +185,7 @@ impl Config {
 }
 
 /// The `[Settings]` keys, as the INI spells them.
-pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin", "MedAt", "PetTaunt"];
+pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "HotAt", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin", "MedAt", "PetTaunt"];
 
 fn canonical(key: &str) -> Option<&'static str> {
     SETTINGS.iter().copied().find(|name| name.eq_ignore_ascii_case(key))
@@ -295,7 +301,7 @@ mod tests {
             "Monk.ini: [Settings] Follow=maybe: on or off",
             "Monk.ini: [Settings] AssistAt=0: a percent from 1 to 100",
             "Monk.ini: [Settings] CampRadius=-5: a distance above 0",
-            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin, MedAt, PetTaunt",
+            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, HotAt, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin, MedAt, PetTaunt",
             "Monk.ini: [ability.offense] first=Flying Kick: entries are numbered 1=, 2=..., best first",
         ]);
         let defaults = Config::default();

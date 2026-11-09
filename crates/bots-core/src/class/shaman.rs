@@ -34,8 +34,9 @@ impl Class for Shaman {
         false
     }
 
-    /// The emergency heal, then the group HoT, then the tank's HoT, each on
-    /// the members its spell reaches.
+    /// The emergency heal, then the group HoT, then the HoT on the lowest
+    /// member below `HotAt` without it (the tank winning ties), each on the
+    /// members its spell reaches. All come before buffs, debuffs and nukes.
     fn urgent(&mut self, config: &Config, _state: &State, game: &dyn Game) -> Option<Action> {
         let members = game.members();
         let reached = |spell: &str| members.iter().filter(|member| game.in_range(spell, member.id)).cloned().collect::<Vec<_>>();
@@ -61,9 +62,10 @@ impl Class for Shaman {
                 return Some(Action::Cast { spell: hot.to_owned(), target: None });
             }
         }
-        let hot = best_memorized(config, "heal.hot", game)?;
-        let tank = members.iter().find(|member| member.tank && member.fighting && game.in_range(hot, member.id))?;
-        (game.buff_left(tank.id, hot).is_none() && game.spell_ready(hot)).then(|| Action::Cast { spell: hot.to_owned(), target: Some(tank.id) })
+        let hot = best_memorized(config, "heal.hot", game).filter(|hot| game.spell_ready(hot))?;
+        let below = |member: &&Member| member.hp_percent < i32::from(config.hot_at) && game.buff_left(member.id, hot).is_none();
+        let member = reached(hot).into_iter().filter(|member| below(&member)).min_by_key(|member| (member.hp_percent, !member.tank))?;
+        Some(Action::Cast { spell: hot.to_owned(), target: Some(member.id) })
     }
 
     /// Melee buffs, kept up between fights too, but not while medding:
@@ -191,7 +193,7 @@ mod tests {
     fn heals_the_tank_sooner_than_the_others() {
         let mut game = group();
         hurt(&mut game, ROGUE, 60);
-        assert_eq!(urgent(&game), None, "60% is above EmergencyAt");
+        assert_eq!(urgent(&game), cast("Spiritual Light", Some(ROGUE)), "60% is above EmergencyAt, so only the HoT");
         hurt(&mut game, TANK, 65);
         assert_eq!(urgent(&game), cast("Greater Healing", Some(TANK)), "the tank is below HealAt");
         hurt(&mut game, ROGUE, 45);
@@ -259,14 +261,35 @@ mod tests {
     }
 
     #[test]
-    fn keeps_the_hot_on_the_tank_while_it_fights() {
+    fn hot_on_the_lowest_below_hot_at_tank_or_not() {
         let mut game = group();
         game.member_buffs.clear();
-        assert_eq!(urgent(&game), cast("Spiritual Light", Some(TANK)));
+        // Two hurt would get the group HoT first.
+        game.ready.retain(|spell| *spell != "Breath of Trushar");
+        assert_eq!(urgent(&game), None, "everyone above HotAt");
+        hurt(&mut game, ROGUE, 79);
+        assert_eq!(urgent(&game), cast("Spiritual Light", Some(ROGUE)), "not only the tank");
+        hurt(&mut game, TANK, 75);
+        assert_eq!(urgent(&game), cast("Spiritual Light", Some(TANK)), "above HealAt, but the lowest");
+        game.member_buffs.push((TANK, "Spiritual Light"));
+        assert_eq!(urgent(&game), cast("Spiritual Light", Some(ROGUE)), "the tank has it");
+        hurt(&mut game, ROGUE, 75);
+        game.member_buffs.clear();
+        assert_eq!(urgent(&game), cast("Spiritual Light", Some(TANK)), "the tank wins a tie");
         game.members.iter_mut().for_each(|member| member.fighting = false);
-        assert_eq!(urgent(&game), None, "the tank isn't fighting");
-        game.members[2].fighting = true;
-        assert_eq!(urgent(&game), None, "only the tank gets it");
+        assert_eq!(urgent(&game), cast("Spiritual Light", Some(TANK)), "in a fight or out");
+        game.ready.retain(|spell| *spell != "Spiritual Light");
+        assert_eq!(urgent(&game), None, "not ready");
+    }
+
+    #[test]
+    fn heals_come_before_anything_else_in_a_fight() {
+        let mut game = fighting();
+        hurt(&mut game, ROGUE, 70);
+        game.member_buffs.retain(|(id, spell)| !(*id == ROGUE && *spell == "Spiritual Light"));
+        let config = config();
+        let state = State::new(&Config::default());
+        assert_eq!(Shaman.urgent(&config, &state, &game), cast("Spiritual Light", Some(ROGUE)), "before the melee buffs, debuffs and nukes fight() would cast");
     }
 
     fn fight(game: &FakeGame) -> Option<Action> {

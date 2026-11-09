@@ -34,7 +34,7 @@ Listed most important first. The shaman keeps memorized what it uses of each, on
 | Archetype | What goes in it | Used yet? |
 |---|---|---|
 | `heal` | Single-target heal | Cast |
-| `heal.hot` | Single-target heal over time, kept on the tank | Cast |
+| `heal.hot` | Single-target heal over time, on the lowest member (tank or not) below `HotAt` without it, before buffs, debuffs and nukes | Cast |
 | `heal.group.hot` | Group heal over time | Cast |
 | `buff.melee` | Short melee buffs (Spirit of the Panther), in a fight and between fights (not while moving), on melee-class members (the tank first), then their pets, when missing or under `RebuffAt` seconds left | Cast |
 | `debuff` | Slows, malos, cripples..., *each kind*, kept on the mob in list order, from `DpsManaMin` mana and above `DotStopAt` mob HP, until `MaxResists` resists in a row | Cast |
