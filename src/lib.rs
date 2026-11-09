@@ -46,9 +46,19 @@ impl Plugin for Bots {
         }
     }
 
+    /// What was set by command (mode, following...) stays; what belonged to
+    /// the old zone goes. The mob's spawn ID may be another's in the new zone.
+    fn on_begin_zone(&mut self, mq: &Mq<Self>) {
+        self.state.engaged = None;
+        self.state.attack_requested = false;
+        self.stop_task(mq);
+    }
+
     fn on_set_game_state(&mut self, mq: &Mq<Self>, state: GameState) {
-        // The next character in may not be this one.
-        if matches!(state, GameState::CharacterSelect | GameState::CharacterCreate | GameState::LoggingIn) {
+        // The next character in may not be this one. Not on LoggingIn:
+        // zoning passes through it, and changing characters always goes
+        // through character select.
+        if matches!(state, GameState::CharacterSelect | GameState::CharacterCreate) {
             self.loaded_for.clear();
             self.posse = None;
             self.stop_task(mq);
