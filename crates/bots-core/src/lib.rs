@@ -6,6 +6,7 @@ mod config;
 mod engage;
 mod follow;
 mod med;
+mod pet;
 mod resists;
 mod state;
 
@@ -18,6 +19,7 @@ pub use config::{Config, IniFile, SETTINGS_SECTION};
 pub use engage::{Decision, Mob, Seen, decide};
 pub use follow::follow_target;
 pub use med::{medding, sit};
+pub use pet::{Pet, PetOrder, on_disengage, order as pet_order};
 pub use resists::{Outcome, Resists};
 pub use state::State;
 

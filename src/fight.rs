@@ -2,8 +2,8 @@
 
 use std::time::{Duration, Instant};
 
-use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Resists, Seen, aura_named, decide, follow_target, medding, plan_gems, same_name, sit};
-use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
+use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Pet, PetOrder, Resists, Seen, aura_named, decide, follow_target, medding, on_disengage, pet_order, plan_gems, same_name, sit};
+use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, PetCommand, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
 use posse_core::{BuffEntry, flags};
 use posse_shm::now_ms;
 
@@ -25,6 +25,9 @@ const LANDED_HOLD: Duration = Duration::from_secs(6);
 /// A spell that didn't take hold on someone (a stronger one is on them) is
 /// taken as on them this long.
 const BLOCKED_HOLD: Duration = Duration::from_secs(60);
+/// The same order isn't given the pet again sooner than this, while the
+/// server answers the first.
+const PET_ORDER_GAP: Duration = Duration::from_secs(2);
 /// A caster in a fight turns to face the mob when it's further off than this.
 const FACE_WITHIN_DEGREES: f32 = 5.0;
 const MOVEUTILS: &str = "MQ2MoveUtils";
@@ -38,6 +41,8 @@ pub struct Fight {
     warned_stick: bool,
     /// Said once that following needs MQ2AdvPath.
     warned_follow: bool,
+    /// The last order given the pet, and when.
+    pet_order: Option<(PetOrder, Instant)>,
     /// The spawn `/afollow` was last sent for, until `/afollow off`.
     pub followed: Option<u32>,
     /// Sat down to med, so it's this plugin's to stand up again; one sat
@@ -220,6 +225,10 @@ impl Bots {
                 let _ = mq.face_now(toward);
             }
         }
+        // The pet goes for the mob only while it's targeted (`/pet attack`
+        // takes your target), not while a cast on someone else has it.
+        let mob_targeted = self.fight.task.is_none() && mq.target().is_some_and(|target| target.id().0 == id);
+        self.order_pet(mq, |config, pet| pet_order(config, pet, mob_targeted.then_some(id)));
         if self.fight.next_action.is_some_and(|at| Instant::now() < at) {
             return;
         }
@@ -243,6 +252,7 @@ impl Bots {
         if mq.is_auto_attacking() || mq.combat_state() == Some(CombatState::Combat) {
             return;
         }
+        self.order_pet(mq, |config, pet| pet_order(config, pet, None));
         if self.fight.next_action.is_some_and(|at| Instant::now() < at) {
             return;
         }
@@ -319,6 +329,27 @@ impl Bots {
         }
         self.fight.next_action = Some(Instant::now() + ACTION_GAP);
         self.fight.last_action = Some(Instant::now());
+    }
+
+    /// Gives your pet, if you have one, the order `decide` picks, unless
+    /// it's the one given last, under [`PET_ORDER_GAP`] ago.
+    fn order_pet(&mut self, mq: &Mq<Self>, decide: impl FnOnce(&bots_core::Config, &Pet) -> Option<PetOrder>) {
+        if mq.pet().is_none() {
+            return;
+        }
+        let pet = Pet { target: mq.pet_target().map(|target| target.id().0), taunt: mq.pet_commands().map(|commands| commands.taunt) };
+        let Some(order) = decide(&self.config, &pet) else { return };
+        if self.fight.pet_order.is_some_and(|(last, at)| last == order && at.elapsed() < PET_ORDER_GAP) {
+            return;
+        }
+        let command = match order {
+            PetOrder::Attack => PetCommand::Attack,
+            PetOrder::BackOff => PetCommand::BackOff,
+            PetOrder::Taunt(on) => PetCommand::Taunt(on),
+        };
+        if mq.pet_command(command) {
+            self.fight.pet_order = Some((order, Instant::now()));
+        }
     }
 
     /// Follows `spawn` with MQ2AdvPath, or stops following for `None`; sends
@@ -443,6 +474,7 @@ impl Bots {
 
     pub fn disengage(&mut self, mq: &Mq<Self>) {
         let Some(id) = self.state.engaged.take() else { return };
+        self.order_pet(mq, |_, pet| on_disengage(pet));
         if mq.is_auto_attacking() {
             mq.set_auto_attack(false);
         }

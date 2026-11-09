@@ -56,6 +56,8 @@ pub struct Config {
     pub nuke_mana_min: u8,
     /// Sit to med below this mana %, until full; 0 never meds (`MedAt`).
     pub med_at: u8,
+    /// Your pet taunts (`PetTaunt`); off while the paladin tanks.
+    pub pet_taunt: bool,
     /// By lowercase name, since INI sections ignore case.
     pub(crate) archetypes: BTreeMap<String, Vec<String>>,
 }
@@ -77,6 +79,7 @@ impl Default for Config {
             max_resists: 3,
             nuke_mana_min: 70,
             med_at: 80,
+            pet_taunt: false,
             archetypes: BTreeMap::new(),
         }
     }
@@ -141,6 +144,7 @@ impl Config {
             "MaxResists" => self.max_resists.to_string(),
             "NukeManaMin" => self.nuke_mana_min.to_string(),
             "MedAt" => self.med_at.to_string(),
+            "PetTaunt" => on_off(self.pet_taunt),
             _ => return None,
         })
     }
@@ -166,6 +170,7 @@ impl Config {
             "maxresists" => value.parse().ok().filter(|count| (1..=10).contains(count)).map(|count| self.max_resists = count).ok_or("a count from 1 to 10"),
             "nukemanamin" => mana(&mut self.nuke_mana_min),
             "medat" => mana(&mut self.med_at),
+            "pettaunt" => switch(value).map(|on| self.pet_taunt = on).ok_or("on or off"),
             "campradius" => value.parse::<f32>().ok().filter(|radius| *radius > 0.0 && radius.is_finite()).map(|radius| self.camp_radius = radius).ok_or("a distance above 0"),
             _ => unreachable!("{name} is in SETTINGS but not set"),
         };
@@ -174,7 +179,7 @@ impl Config {
 }
 
 /// The `[Settings]` keys, as the INI spells them.
-pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin", "MedAt"];
+pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin", "MedAt", "PetTaunt"];
 
 fn canonical(key: &str) -> Option<&'static str> {
     SETTINGS.iter().copied().find(|name| name.eq_ignore_ascii_case(key))
@@ -273,6 +278,9 @@ mod tests {
         assert_eq!((config.med_at, problems), (0, vec![]), "0 never meds");
         let (_, problems) = Config::read(&ini("Shaman.ini", &[("Settings", &[("MedAt", "101")])]));
         assert_eq!(problems, ["Shaman.ini: [Settings] MedAt=101: a percent from 0 to 100"]);
+        assert!(!Config::default().pet_taunt, "the paladin tanks");
+        let (config, problems) = Config::read(&ini("Magician.ini", &[("Settings", &[("PetTaunt", "on")])]));
+        assert_eq!((config.pet_taunt, config.setting("pettaunt"), problems), (true, Some("on".into()), vec![]));
     }
 
     #[test]
@@ -287,7 +295,7 @@ mod tests {
             "Monk.ini: [Settings] Follow=maybe: on or off",
             "Monk.ini: [Settings] AssistAt=0: a percent from 1 to 100",
             "Monk.ini: [Settings] CampRadius=-5: a distance above 0",
-            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin, MedAt",
+            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin, MedAt, PetTaunt",
             "Monk.ini: [ability.offense] first=Flying Kick: entries are numbered 1=, 2=..., best first",
         ]);
         let defaults = Config::default();

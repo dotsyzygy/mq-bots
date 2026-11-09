@@ -75,10 +75,10 @@ Listed most important first, and memorized the shaman's way.
 |---|---|---|
 | `debuff` | The malo line, *each kind*, kept on the mob the shaman's way (`DpsManaMin`, `DotStopAt`, `MaxResists`) | Cast |
 | `nuke` | Direct damage, once debuffs are on, above `NukeManaMin` mana | Cast |
-| `pet` | Pet summons | Milestone 2 |
-| `pet.weapon` | Pet weapon summons | Milestone 3 |
-| `pet.gear` | Other pet gear summons | Milestone 3 |
-| `buff.pet` | Buffs for its own pet | Milestone 5 |
+| `pet` | Pet summons | Milestone 1 |
+| `pet.weapon` | Pet weapon summons | Milestone 2 |
+| `pet.gear` | Other pet gear summons | Milestone 2 |
+| `buff.pet` | Buffs for its own pet | Milestone 4 |
 
 Example: `MQ2Bots_<server>_<magician>.ini`
 
