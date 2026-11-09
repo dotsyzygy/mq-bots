@@ -2,7 +2,7 @@
 
 A MacroQuest plugin that runs your boxed EverQuest characters as bots: they assist your main character, use their abilities and follow you. One plugin covers every class; spells and abilities are mapped per server in an INI file.
 
-> **Status: early.** A monk assists: it engages the Main Assist's target, sticks behind it, attacks, and uses its abilities and regular discs. Burns, Mend, Feign Death and following aren't built yet. Other classes come after the monk. See [docs/plan.md](docs/plan.md).
+> **Status: early.** A monk assists: it engages the Main Assist's target, sticks behind it, attacks, uses its abilities and regular discs, and follows the Main Assist out of combat. Burns, Mend and Feign Death aren't built yet. Other classes come after the monk. See [docs/plan.md](docs/plan.md).
 
 It's built on [mq-emu](https://github.com/dotsyzygy/mq-emu-rs), so it runs only on emulator servers with the RoF2 client (MacroQuest's `emu` branch, 32-bit). It uses [MQ2Posse](https://github.com/dotsyzygy/mq-posse) for shared status between clients on one PC.
 
@@ -15,7 +15,7 @@ cargo test -p bots-core
 cargo mq deploy
 ```
 
-Then `/plugin MQ2Bots` in game, with MQ2Posse, and MQ2MoveUtils for sticking.
+Then `/plugin MQ2Bots` in game, with MQ2Posse, MQ2MoveUtils for sticking, and MQ2AdvPath for following.
 
 ## Commands
 
@@ -27,7 +27,7 @@ Then `/plugin MQ2Bots` in game, with MQ2Posse, and MQ2MoveUtils for sticking.
 | `/bots attack` | Engage the MA's target now, ignoring assist-at and the camp radius; it also resumes |
 | `/bots backoff` / `/bots resume` | Disengage and stop auto-engaging / start again |
 | `/bots burn [off]` | Start or end a burn phase |
-| `/bots follow [on\|off]` | Follow the driver; alone, it toggles (saved, like `/bots set Follow`) |
+| `/bots follow [on\|off]` | Follow the Main Assist out of combat; alone, it toggles (saved, like `/bots set Follow`) |
 | `/bots set [<setting> <value>]` | Set any `[Settings]` key (`/bots set HealAt 60`) and save it in the character's INI, `MQ2Bots_<server>_<name>.ini`, so it's kept through zoning, camping and `/bots reload`; alone, it lists every setting's value |
 | `/bots reload` | Reread the INI |
 

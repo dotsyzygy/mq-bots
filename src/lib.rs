@@ -52,6 +52,14 @@ impl Plugin for Bots {
         self.state.engaged = None;
         self.state.attack_requested = false;
         self.stop_task(mq);
+        // MQ2AdvPath takes no commands while zoning; the first look in the
+        // new zone follows again.
+        self.fight.followed = None;
+    }
+
+    /// Doesn't leave the character following with no one to stop it.
+    fn shutdown(&mut self, mq: &Mq<Self>) {
+        self.follow(mq, None);
     }
 
     fn on_set_game_state(&mut self, mq: &Mq<Self>, state: GameState) {
@@ -62,6 +70,7 @@ impl Plugin for Bots {
             self.loaded_for.clear();
             self.posse = None;
             self.stop_task(mq);
+            self.fight.followed = None;
         }
     }
 }

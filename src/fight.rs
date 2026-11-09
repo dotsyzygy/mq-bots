@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Resists, Seen, aura_named, decide, plan_gems, same_name};
+use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Resists, Seen, aura_named, decide, follow_target, plan_gems, same_name};
 use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
 use posse_core::{BuffEntry, flags};
 use posse_shm::now_ms;
@@ -26,6 +26,7 @@ const LANDED_HOLD: Duration = Duration::from_secs(6);
 /// taken as on them this long.
 const BLOCKED_HOLD: Duration = Duration::from_secs(60);
 const MOVEUTILS: &str = "MQ2MoveUtils";
+const ADVPATH: &str = "MQ2AdvPath";
 
 #[derive(Default)]
 pub struct Fight {
@@ -33,6 +34,10 @@ pub struct Fight {
     next_action: Option<Instant>,
     /// Said once that sticking needs MQ2MoveUtils.
     warned_stick: bool,
+    /// Said once that following needs MQ2AdvPath.
+    warned_follow: bool,
+    /// The spawn `/afollow` was last sent for, until `/afollow off`.
+    pub followed: Option<u32>,
     /// The aura last used, and when.
     last_aura: Option<(String, Instant)>,
     pub given_up_auras: Vec<String>,
@@ -77,6 +82,9 @@ impl Bots {
         let decision = decide(&mut self.state, &self.config, &Seen { ma_target, engaged });
         // The engaged mob with the MA's HP for it, when it's the MA's target.
         let fought = engaged.map(|engaged| ma_target.filter(|mob| mob.id == engaged.id).unwrap_or(engaged));
+        let busy = me.is_feigning() || me.casting().is_some() || self.fight.task.is_some();
+        let decided_engage = matches!(decision, Decision::Engage(_));
+        self.follow(mq, if decided_engage { None } else { follow_target(&self.state, ma.as_ref().map(|ma| ma.id().0), busy) });
         if matches!(decision, Decision::Idle | Decision::Fight) && self.urgent(mq, &me, fought) {
             return;
         }
@@ -276,11 +284,33 @@ impl Bots {
         self.fight.last_action = Some(Instant::now());
     }
 
+    /// Follows `spawn` with MQ2AdvPath, or stops following for `None`; sends
+    /// `/afollow` only when that changes.
+    pub fn follow(&mut self, mq: &Mq<Self>, spawn: Option<u32>) {
+        if spawn == self.fight.followed {
+            return;
+        }
+        if !mq.is_plugin_loaded(ADVPATH) {
+            self.fight.followed = None;
+            if spawn.is_some() && !std::mem::replace(&mut self.fight.warned_follow, true) {
+                mq.chat(yellow!("[Bots] load {ADVPATH} to follow the MA"));
+            }
+            return;
+        }
+        let sent = match spawn {
+            Some(id) => mq.command(format!("/afollow spawn {id}")),
+            None => mq.command("/afollow off"),
+        };
+        self.fight.followed = spawn.filter(|_| sent);
+    }
+
     /// Casts as a task; one at a time.
     fn cast(&mut self, mq: &Mq<Self>, name: &str, target: Option<u32>) {
         if self.fight.task.is_some() {
             return;
         }
+        // Moving breaks a cast off; the next look follows again once it's done.
+        self.follow(mq, None);
         let Some((_, spell)) = memorized(mq, name) else { return };
         let mut cast = Cast::new(spell.id());
         if let Some(target) = target {

@@ -4,6 +4,7 @@ mod class;
 mod commands;
 mod config;
 mod engage;
+mod follow;
 mod resists;
 mod state;
 
@@ -14,6 +15,7 @@ pub use class::{Action, Class, Game, GemPlan, Member, Spells, REFRESH_BUFF_AT, a
 pub use commands::{Command, USAGE, parse};
 pub use config::{Config, Layer, SETTINGS_SECTION};
 pub use engage::{Decision, Mob, Seen, decide};
+pub use follow::follow_target;
 pub use resists::{Outcome, Resists};
 pub use state::State;
 
