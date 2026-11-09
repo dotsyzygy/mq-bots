@@ -30,6 +30,14 @@ const BLOCKED_HOLD: Duration = Duration::from_secs(60);
 const PET_ORDER_GAP: Duration = Duration::from_secs(2);
 /// A caster in a fight turns to face the mob when it's further off than this.
 const FACE_WITHIN_DEGREES: f32 = 5.0;
+/// How far into the game's melee range a melee bot sticks, in percent. The
+/// game's range adds the height difference between the two spawns, so a tall
+/// mob gets more than the server lets you hit from ("Your target is too far
+/// away"); half of it is in reach for the server too.
+const STICK_PERCENT: f32 = 50.0;
+/// Abilities wait until the bot is this far into the game's melee range, in
+/// percent: where it sticks, with some slack for the stick wobbling.
+const REACH_PERCENT: f32 = 60.0;
 const MOVEUTILS: &str = "MQ2MoveUtils";
 const ADVPATH: &str = "MQ2AdvPath";
 
@@ -143,7 +151,7 @@ impl Bots {
             return;
         }
         if mq.is_plugin_loaded(MOVEUTILS) {
-            mq.command("/stick behind");
+            mq.command(&format!("/stick behind {STICK_PERCENT}%"));
         } else if !std::mem::replace(&mut self.fight.warned_stick, true) {
             mq.chat(yellow!("[Bots] load {MOVEUTILS} to stick to mobs"));
         }
@@ -593,7 +601,7 @@ impl Game for Seeing<'_> {
     }
 
     fn in_melee_range(&self) -> bool {
-        self.mq.target().is_some_and(|target| self.me.distance_to(&target) <= self.mq.melee_range(self.me, &target))
+        self.mq.target().is_some_and(|target| self.me.distance_to(&target) <= self.mq.melee_range(self.me, &target) * REACH_PERCENT / 100.0)
     }
 
     fn spell_known(&self, name: &str) -> bool {
