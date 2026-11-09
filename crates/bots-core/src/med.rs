@@ -11,7 +11,8 @@ pub fn medding(config: &Config, was: bool, mana_percent: Option<i32>) -> bool {
 
 /// Whether to sit now, while medding and with nothing to do this pulse
 /// (`idle`: not moving, casting, memorizing, feigning or stunned, and
-/// nothing to cast). In a fight, a melee class never sits, and a caster only
+/// nothing to cast). In a fight (`fighting`: engaged, or anything on the
+/// extended target window's auto-hater slots), a melee class never sits, and a caster only
 /// once its mana (`mana_percent`) is too low for any damage spell (at or
 /// below both `DpsManaMin` and `NukeManaMin`): between casts it stays up.
 pub fn sit(config: &Config, state: &State, idle: bool, fighting: bool, melee: bool, mana_percent: i32) -> bool {

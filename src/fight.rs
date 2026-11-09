@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Pet, PetOrder, Resists, Seen, aura_named, decide, follow_target, medding, on_disengage, pet_order, plan_gems, same_name, sit};
-use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, PetCommand, Spawn, SpawnId, Spell, SpellId, Task, TaskId, green, yellow};
+use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, PetCommand, Spawn, SpawnId, Spell, SpellId, Task, TaskId, XTARGET_AUTO_HATER, XTargetStatus, green, yellow};
 use posse_core::{BuffEntry, flags};
 use posse_shm::now_ms;
 
@@ -106,7 +106,11 @@ impl Bots {
         self.follow(mq, if decided_engage { None } else { follow_target(&self.state, ma.as_ref().map(|ma| ma.id().0), busy) });
         // About to be moved off by following.
         let leaving = self.fight.followed.is_some() && ma.as_ref().is_some_and(|ma| ma.is_moving());
-        if self.fight.sat && (!self.state.medding || leaving) {
+        // Anything hating the group makes it a fight for sitting, engaged
+        // or not: melee stay up, and casters sit only out of spell mana.
+        let in_fight = self.state.engaged.is_some() || haters(mq);
+        let mana = mana_percent(mq).unwrap_or(0);
+        if self.fight.sat && (!sit(&self.config, &self.state, true, in_fight, self.melee(), mana) || leaving) {
             self.stand(mq);
         }
         if matches!(decision, Decision::Idle | Decision::Fight) && self.urgent(mq, &me, fought) {
@@ -120,7 +124,7 @@ impl Bots {
             Decision::Disengage => self.disengage(mq),
         }
         let idle = self.fight.last_action == acted && self.fight.task.is_none() && !leaving && !me.is_moving() && me.casting().is_none() && !me.is_feigning() && !me.is_stunned();
-        if me.is_standing() && sit(&self.config, &self.state, idle, self.state.engaged.is_some(), self.melee(), mana_percent(mq).unwrap_or(0)) {
+        if me.is_standing() && sit(&self.config, &self.state, idle, in_fight, self.melee(), mana) {
             mq.set_sitting(true);
             self.fight.sat = true;
         }
@@ -493,6 +497,13 @@ impl Bots {
             mq.set_target(None);
         }
     }
+}
+
+/// Whether an auto-hater slot of the extended target window holds a living
+/// spawn in the zone: something hates you or the group.
+fn haters(mq: &Mq<Bots>) -> bool {
+    let alive = |id| mq.spawn(id).is_some_and(|spawn| !spawn.is_corpse());
+    mq.xtargets().any(|slot| slot.role() == XTARGET_AUTO_HATER && slot.status() == XTargetStatus::InZone && slot.spawn_id().is_some_and(alive))
 }
 
 /// The group's Main Assist, if it's in the zone.
