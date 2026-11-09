@@ -144,7 +144,7 @@ mod tests {
             section("nuke", &["Frost Strike"]),
             section("buff.melee", &["Spirit of the Panther"]),
         ];
-        Config::from_layers(&[crate::Layer { name: "Shaman.ini".into(), sections }]).0
+        Config::read(&crate::IniFile { name: "Shaman.ini".into(), sections }).0
     }
 
     fn member(id: u32, hp_percent: i32) -> Member {

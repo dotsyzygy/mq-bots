@@ -43,7 +43,7 @@ Listed most important first. The shaman keeps memorized what it uses of each, on
 
 `heal.group` (a direct group heal, no HoT) is a different archetype, for classes that have one; the shaman doesn't.
 
-Example: `MQ2Bots_<server>_Shaman.ini`
+Example: `MQ2Bots_<server>_<shaman>.ini`
 
 ```ini
 [heal]
@@ -80,7 +80,7 @@ Listed most important first, and memorized the shaman's way.
 | `pet.gear` | Other pet gear summons | Milestone 2 |
 | `buff.pet` | Buffs for its own pet | Milestone 4 |
 
-Example: `MQ2Bots_<server>_Magician.ini`
+Example: `MQ2Bots_<server>_<magician>.ini`
 
 ```ini
 [debuff]

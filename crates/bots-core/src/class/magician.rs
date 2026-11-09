@@ -53,7 +53,7 @@ mod tests {
 
     fn config() -> Config {
         let section = |name: &str, spells: &[&str]| (name.to_owned(), spells.iter().enumerate().map(|(i, spell)| ((i + 1).to_string(), spell.to_string())).collect());
-        Config::from_layers(&[crate::Layer { name: "Magician.ini".into(), sections: vec![section("debuff", &[MALO]), section("nuke", &[BOLT])] }]).0
+        Config::read(&crate::IniFile { name: "Magician.ini".into(), sections: vec![section("debuff", &[MALO]), section("nuke", &[BOLT])] }).0
     }
 
     /// A fight against a mob at 90% with nothing on it and its buffs seen,

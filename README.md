@@ -1,6 +1,6 @@
 # MQ2Bots
 
-A MacroQuest plugin that runs your boxed EverQuest characters as bots: they assist your main character, use their abilities and follow you. One plugin covers every class; spells and abilities are mapped per server in an INI file.
+A MacroQuest plugin that runs your boxed EverQuest characters as bots: they assist your main character, use their abilities and follow you. One plugin covers every class; spells and abilities are mapped in an INI file per character.
 
 > **Status: early.** A monk assists: it engages the Main Assist's target, sticks behind it, attacks, uses its abilities and regular discs, and follows the Main Assist out of combat. Burns, Mend and Feign Death aren't built yet. Other classes come after the monk. See [docs/plan.md](docs/plan.md).
 
@@ -41,7 +41,7 @@ In melee range, the monk uses the first ready ability in `ability.offense`, or e
 
 ## Config
 
-The plugin reads two files from MacroQuest's config folder when a character enters the game: `MQ2Bots_<server>_<class>.ini` (the class as `${Me.Class}` names it, such as `Monk`) and then, if it's there, `MQ2Bots_<server>_<character>.ini`. In the character's file, an archetype section replaces the class's whole list, and a setting replaces just that setting. Problems are reported in chat and skipped.
+The plugin reads one file from MacroQuest's config folder when a character enters the game: `MQ2Bots_<server>_<character>.ini`, holding both its archetypes and its `[Settings]`. Each character has its own, so two of one class can use different spells (only one magician debuffing, say); copy a file to start another character's. Problems are reported in chat and skipped.
 
 ```ini
 [Settings]

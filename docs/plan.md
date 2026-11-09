@@ -26,7 +26,7 @@ Everything the bot reads or does in game goes through mq-emu's safe API. A missi
 
 The code never names spells, discs or abilities. It asks for an archetype, and the INI maps each archetype to an ordered list, best first. The bot uses the first entry that is known and usable at the character's level, so one list covers every level.
 
-- Files: one per server and class (`MQ2Bots_<server>_<class>.ini`), plus an optional per-character override (`MQ2Bots_<server>_<name>.ini`).
+- Files: one per character (`MQ2Bots_<server>_<name>.ini`), holding its archetypes and `[Settings]`. No per-class file: two characters of one class may want different spells (only one magician debuffs), and copying a file is easy.
 - Each archetype is a section with numbered entries, so priority order is explicit.
 - Later: `/bots genconfig` drafts an INI from the spellbook and ability list using spell categories, target types and effects. The INI stays the source of truth; the generator only saves typing.
 

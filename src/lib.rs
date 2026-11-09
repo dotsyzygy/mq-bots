@@ -5,7 +5,7 @@ mod posse;
 
 use std::path::{Path, PathBuf};
 
-use bots_core::{Class, Command, Config, Layer, Mode, SETTINGS_SECTION, State, USAGE, for_class, parse};
+use bots_core::{Class, Command, Config, IniFile, Mode, SETTINGS_SECTION, State, USAGE, for_class, parse};
 use mq_emu::{GameState, Ini, IniError, Mq, Plugin, green, red, yellow};
 
 const COMMAND: &str = "/bots";
@@ -196,42 +196,41 @@ impl Bots {
         }
     }
 
-    /// Reads the class's INI and then the character's, saying in chat what
-    /// was read and what was wrong with it.
+    /// Reads the character's INI, saying in chat what was read and what was
+    /// wrong with it.
     fn load(&mut self, mq: &Mq<Self>) {
         let Some(me) = mq.me() else { return };
         let server = mq.server_name().unwrap_or_default();
-        let class = mq.class_name(me.class()).unwrap_or_else(|| me.class().to_string());
-        let paths = [config_path(mq, &server, &class), config_path(mq, &server, &me.name())];
-        let mut layers = Vec::new();
-        for path in &paths {
-            match read_layer(path) {
-                Ok(Some(layer)) => layers.push(layer),
-                Ok(None) => {}
-                Err(e) => mq.chat(red!("[Bots] couldn't read config/{}: {e}", file_name(path))),
+        let path = config_path(mq, &server, &me.name());
+        let file = match read_ini(&path) {
+            Ok(file) => file,
+            Err(e) => {
+                mq.chat(red!("[Bots] couldn't read config/{}: {e}", file_name(&path)));
+                None
             }
-        }
-        let (config, problems) = Config::from_layers(&layers);
+        };
+        let (config, problems) = file.as_ref().map(Config::read).unwrap_or_default();
         for problem in problems {
             mq.chat(yellow!("[Bots] {problem}"));
         }
-        if layers.is_empty() {
-            mq.chat(yellow!("[Bots] no config: create config/{} with the {class} archetypes", file_name(&paths[0])));
-        } else {
-            let names: Vec<&str> = layers.iter().map(|layer| layer.name.as_str()).collect();
-            mq.chat(green!("[Bots] read {}: {} archetypes", names.join(" and "), config.archetypes().count()));
+        match &file {
+            Some(file) => mq.chat(green!("[Bots] read {}: {} archetypes", file.name, config.archetypes().count())),
+            None => {
+                let class = mq.class_name(me.class()).unwrap_or_else(|| me.class().to_string());
+                mq.chat(yellow!("[Bots] no config: create config/{} with the {class} archetypes", file_name(&path)));
+            }
         }
         self.config = config;
     }
 }
 
-/// `MQ2Bots_<server>_<class or character>.ini` in MacroQuest's config folder.
+/// `MQ2Bots_<server>_<character>.ini` in MacroQuest's config folder.
 fn config_path(mq: &Mq<Bots>, server: &str, name: &str) -> PathBuf {
     mq.config_dir().join(format!("MQ2Bots_{server}_{name}.ini"))
 }
 
 /// `None` if there's no such file.
-fn read_layer(path: &Path) -> Result<Option<Layer>, IniError> {
+fn read_ini(path: &Path) -> Result<Option<IniFile>, IniError> {
     if !path.exists() {
         return Ok(None);
     }
@@ -240,7 +239,7 @@ fn read_layer(path: &Path) -> Result<Option<Layer>, IniError> {
         let entries = ini.section(&section);
         (section, entries)
     });
-    Ok(Some(Layer { name: file_name(path), sections: sections.collect() }))
+    Ok(Some(IniFile { name: file_name(path), sections: sections.collect() }))
 }
 
 fn file_name(path: &Path) -> String {

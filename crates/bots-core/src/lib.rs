@@ -14,7 +14,7 @@ use std::str::FromStr;
 
 pub use class::{Action, Class, Game, GemPlan, Member, Spells, REFRESH_BUFF_AT, aura_named, best_memorized, disc_usable, for_class, plan_gems, same_name, spells_used};
 pub use commands::{Command, USAGE, parse};
-pub use config::{Config, Layer, SETTINGS_SECTION};
+pub use config::{Config, IniFile, SETTINGS_SECTION};
 pub use engage::{Decision, Mob, Seen, decide};
 pub use follow::follow_target;
 pub use med::{medding, sit};

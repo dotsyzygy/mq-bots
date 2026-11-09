@@ -19,7 +19,7 @@ pub const SETTINGS_SECTION: &str = "Settings";
 
 /// One INI file's sections, each with its entries in file order.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Layer {
+pub struct IniFile {
     /// The file's name, for the problems found in it.
     pub name: String,
     pub sections: Vec<(String, Vec<(String, String)>)>,
@@ -83,24 +83,21 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Later layers override earlier ones: a section of archetype entries
-    /// replaces the whole list, and a setting replaces just that setting.
-    /// Also returns the problems found, to say in chat; each is skipped.
-    pub fn from_layers(layers: &[Layer]) -> (Config, Vec<String>) {
+    /// The character's INI over the defaults. Also returns the problems
+    /// found, to say in chat; each is skipped.
+    pub fn read(file: &IniFile) -> (Config, Vec<String>) {
         let mut config = Config::default();
         let mut problems = Vec::new();
-        for layer in layers {
-            for (section, entries) in &layer.sections {
-                let mut problem = |text: String| problems.push(format!("{}: [{section}] {text}", layer.name));
-                if section.eq_ignore_ascii_case(SETTINGS_SECTION) {
-                    for (key, value) in entries {
-                        if let Err(text) = config.set(key, value) {
-                            problem(text);
-                        }
+        for (section, entries) in &file.sections {
+            let mut problem = |text: String| problems.push(format!("{}: [{section}] {text}", file.name));
+            if section.eq_ignore_ascii_case(SETTINGS_SECTION) {
+                for (key, value) in entries {
+                    if let Err(text) = config.set(key, value) {
+                        problem(text);
                     }
-                } else {
-                    config.archetypes.insert(section.to_ascii_lowercase(), archetype(entries, &mut problem));
                 }
+            } else {
+                config.archetypes.insert(section.to_ascii_lowercase(), archetype(entries, &mut problem));
             }
         }
         (config, problems)
@@ -208,84 +205,83 @@ fn switch(value: &str) -> Option<bool> {
 mod tests {
     use super::*;
 
-    fn layer(name: &str, sections: &[(&str, &[(&str, &str)])]) -> Layer {
+    fn ini(name: &str, sections: &[(&str, &[(&str, &str)])]) -> IniFile {
         let sections = sections
             .iter()
             .map(|(section, entries)| (section.to_string(), entries.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()))
             .collect();
-        Layer { name: name.to_owned(), sections }
+        IniFile { name: name.to_owned(), sections }
     }
 
     #[test]
     fn nothing_gives_the_defaults() {
-        assert_eq!(Config::from_layers(&[]), (Config::default(), vec![]));
+        assert_eq!(Config::read(&IniFile::default()), (Config::default(), vec![]));
         assert!(Config::default().archetype("ability.offense").is_empty());
     }
 
     #[test]
     fn archetypes_go_by_number_not_file_order() {
-        let class = layer("Monk.ini", &[("ability.offense", &[("2", "Tiger Claw"), ("1", "Flying Kick"), ("10", "Round Kick"), ("3", " ")])]);
-        let (config, problems) = Config::from_layers(&[class]);
+        let class = ini("Monk.ini", &[("ability.offense", &[("2", "Tiger Claw"), ("1", "Flying Kick"), ("10", "Round Kick"), ("3", " ")])]);
+        let (config, problems) = Config::read(&class);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!(config.archetype("Ability.Offense"), ["Flying Kick", "Tiger Claw", "Round Kick"]);
     }
 
     #[test]
-    fn a_later_layer_replaces_whole_archetypes_and_single_settings() {
-        let class = layer("Monk.ini", &[
-            ("Settings", &[("Mode", "assist"), ("AssistAt", "90")]),
-            ("ability.offense", &[("1", "Flying Kick"), ("2", "Tiger Claw")]),
+    fn reads_settings_and_archetypes_from_one_file() {
+        let bob = ini("Bob.ini", &[
+            ("settings", &[("Mode", "assist"), ("AssistAt", "80")]),
+            ("ABILITY.OFFENSE", &[("1", "Flying Kick"), ("2", "Tiger Claw")]),
             ("mend", &[("1", "Mend")]),
         ]);
-        let character = layer("Bob.ini", &[("settings", &[("AssistAt", "80")]), ("ABILITY.OFFENSE", &[("1", "Kick")])]);
-        let (config, problems) = Config::from_layers(&[class, character]);
+        let (config, problems) = Config::read(&bob);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!((config.mode, config.assist_at), (Mode::Assist, 80));
-        assert_eq!(config.archetype("ability.offense"), ["Kick"]);
+        assert_eq!(config.archetype("ability.offense"), ["Flying Kick", "Tiger Claw"]);
         assert_eq!(config.archetype("mend"), ["Mend"]);
         assert_eq!(config.archetypes().map(|(name, _)| name).collect::<Vec<_>>(), ["ability.offense", "mend"]);
     }
 
     #[test]
     fn says_which_sections_a_class_doesnt_read() {
-        let monk = layer("Monk.ini", &[("ability.offensive", &[("1", "Flying Kick")]), ("Disc.Regular", &[("1", "Thunderkick")])]);
-        let (config, _) = Config::from_layers(&[monk]);
+        let monk = ini("Monk.ini", &[("ability.offensive", &[("1", "Flying Kick")]), ("Disc.Regular", &[("1", "Thunderkick")])]);
+        let (config, _) = Config::read(&monk);
         assert_eq!(config.unknown_archetypes(&["ability.offense", "disc.regular"]), ["ability.offensive"]);
     }
 
     #[test]
     fn reads_every_setting() {
-        let settings = layer("Monk.ini", &[("Settings", &[("mode", "OFF"), ("Follow", "on"), ("AssistAt", "100"), ("CampRadius", "60.5")])]);
-        let (config, problems) = Config::from_layers(&[settings]);
+        let settings = ini("Monk.ini", &[("Settings", &[("mode", "OFF"), ("Follow", "on"), ("AssistAt", "100"), ("CampRadius", "60.5")])]);
+        let (config, problems) = Config::read(&settings);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!((config.mode, config.follow, config.assist_at, config.camp_radius), (Mode::Off, true, 100, 60.5));
-        let heals = layer("Shaman.ini", &[("Settings", &[("HealAt", "75"), ("EmergencyAt", "40"), ("GroupHotAt", "90"), ("GroupHotCount", "3"), ("RebuffAt", "20")])]);
-        let (config, problems) = Config::from_layers(&[heals]);
+        let heals = ini("Shaman.ini", &[("Settings", &[("HealAt", "75"), ("EmergencyAt", "40"), ("GroupHotAt", "90"), ("GroupHotCount", "3"), ("RebuffAt", "20")])]);
+        let (config, problems) = Config::read(&heals);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!((config.heal_at, config.emergency_at, config.group_hot_at, config.group_hot_count), (75, 40, 90, 3));
         assert_eq!(config.rebuff_at, Duration::from_secs(20));
-        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("HealAt", "101"), ("GroupHotCount", "0"), ("RebuffAt", "-1")])])]);
+        let (_, problems) = Config::read(&ini("Shaman.ini", &[("Settings", &[("HealAt", "101"), ("GroupHotCount", "0"), ("RebuffAt", "-1")])]));
         assert_eq!(problems, ["Shaman.ini: [Settings] HealAt=101: a percent from 1 to 100", "Shaman.ini: [Settings] GroupHotCount=0: a count from 1 to 6", "Shaman.ini: [Settings] RebuffAt=-1: seconds from 0 to 600"]);
-        let dps = layer("Shaman.ini", &[("Settings", &[("DpsManaMin", "0"), ("DotStopAt", "10"), ("MaxResists", "2"), ("NukeManaMin", "100")])]);
-        let (config, problems) = Config::from_layers(&[dps]);
+        let dps = ini("Shaman.ini", &[("Settings", &[("DpsManaMin", "0"), ("DotStopAt", "10"), ("MaxResists", "2"), ("NukeManaMin", "100")])]);
+        let (config, problems) = Config::read(&dps);
         assert_eq!(problems, Vec::<String>::new());
         assert_eq!((config.dps_mana_min, config.dot_stop_at, config.max_resists, config.nuke_mana_min), (0, 10, 2, 100));
-        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("NukeManaMin", "101"), ("MaxResists", "0")])])]);
+        let (_, problems) = Config::read(&ini("Shaman.ini", &[("Settings", &[("NukeManaMin", "101"), ("MaxResists", "0")])]));
         assert_eq!(problems, ["Shaman.ini: [Settings] NukeManaMin=101: a percent from 0 to 100", "Shaman.ini: [Settings] MaxResists=0: a count from 1 to 10"]);
         assert_eq!(Config::default().med_at, 80);
-        let (config, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("MedAt", "0")])])]);
+        let (config, problems) = Config::read(&ini("Shaman.ini", &[("Settings", &[("MedAt", "0")])]));
         assert_eq!((config.med_at, problems), (0, vec![]), "0 never meds");
-        let (_, problems) = Config::from_layers(&[layer("Shaman.ini", &[("Settings", &[("MedAt", "101")])])]);
+        let (_, problems) = Config::read(&ini("Shaman.ini", &[("Settings", &[("MedAt", "101")])]));
         assert_eq!(problems, ["Shaman.ini: [Settings] MedAt=101: a percent from 0 to 100"]);
     }
 
     #[test]
     fn says_what_it_skipped() {
-        let bad = layer("Monk.ini", &[
+        let bad = ini("Monk.ini", &[
             ("Settings", &[("Mode", "tank"), ("Follow", "maybe"), ("AssistAt", "0"), ("CampRadius", "-5"), ("Speed", "9")]),
             ("ability.offense", &[("first", "Flying Kick"), ("2", "Tiger Claw")]),
         ]);
-        let (config, problems) = Config::from_layers(&[bad]);
+        let (config, problems) = Config::read(&bad);
         assert_eq!(problems, [
             "Monk.ini: [Settings] Mode=tank: off, manual or assist",
             "Monk.ini: [Settings] Follow=maybe: on or off",

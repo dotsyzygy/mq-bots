@@ -48,7 +48,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::Layer;
+    use crate::IniFile;
     use crate::class::FakeGame;
 
     fn config() -> Config {
@@ -73,10 +73,10 @@ mod tests {
                 numbered(&["Master's Aura", "Disciple's Aura"]),
             ),
         ];
-        Config::from_layers(&[Layer {
+        Config::read(&IniFile {
             name: "Monk.ini".into(),
             sections,
-        }])
+        })
         .0
     }
 

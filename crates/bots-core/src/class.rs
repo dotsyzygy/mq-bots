@@ -419,7 +419,7 @@ mod tests {
             ("dot".to_owned(), numbered(&["Envenomed Bolt", "Envenomed Breath", "Tainted Breath", "Sicken"])),
             ("nuke".to_owned(), numbered(&["Frost Strike"])),
         ];
-        Config::from_layers(&[crate::Layer { name: "Shaman.ini".into(), sections }]).0
+        Config::read(&crate::IniFile { name: "Shaman.ini".into(), sections }).0
     }
 
     const SPELLS: &[Spells] = &[Spells::Best("heal"), Spells::EachKind("debuff"), Spells::EachKind("dot"), Spells::Best("nuke")];
@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn one_spell_in_two_archetypes_takes_one_gem() {
-        let config = Config::from_layers(&[crate::Layer { name: "Shaman.ini".into(), sections: vec![("heal".into(), vec![("1".into(), "Healing".into())]), ("heal.hot".into(), vec![("1".into(), "Healing".into())])] }]).0;
+        let config = Config::read(&crate::IniFile { name: "Shaman.ini".into(), sections: vec![("heal".into(), vec![("1".into(), "Healing".into())]), ("heal.hot".into(), vec![("1".into(), "Healing".into())])] }).0;
         let game = FakeGame { book: vec!["Healing"], gem_count: 8, gems: vec![(1, "Healing")], ..FakeGame::default() };
         assert_eq!(plan_gems(&config, &[Spells::Best("heal"), Spells::Best("heal.hot")], &game, &[]), GemPlan { next: None, left_out: vec![], wanted: 1 });
     }
