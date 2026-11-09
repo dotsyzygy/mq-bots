@@ -52,7 +52,7 @@ Modes `tank` and `puller` come later.
 
 - A `${Bots}` TLO, until something needs it.
 - A HUD or ImGui panels; a driver HUD comes later.
-- Casters other than the shaman, raids, pulling, MQ2Nav.
+- Casters other than the shaman and the magician, raids, pulling, MQ2Nav.
 - A static camp (`deploy` / `packup`); the camp is the MA until then.
 
 ## Shaman
@@ -65,8 +65,50 @@ Later: long-duration buffs (memorized for the cast in a spare gem, then swapped 
 
 Cannibalize, to come: the shaman's own way of trading health for mana (the Cannibalize spells, and the Cannibalization AA). Cast at about 50% mana (a `CanniAt` setting), from a `canni` archetype that can list the AA and the spells, best first. It has to keep enough HP not to need healing itself, so it waits while HP is low and comes after heals.
 
+## Magician
+
+Planned 2026-11-09. A caster with a pet: it summons and gears its own pet, gears every group member's pet, buffs its own pet, malos and nukes. It follows the caster rules the shaman does: no melee, stay out of melee range, keep line of sight.
+
+Pets are a shared part in core, not magician code, so any class with a pet (necro, beastlord, shaman later) gets summoning, sending the pet in, and pet buffs from the same archetypes.
+
+### Pet
+
+- `[pet]`: pet summons, best first. Out of combat, with no pet, the bot summons the best one it has. A summon that fails for a missing reagent is said once in chat, not retried every pulse.
+- In a fight the pet attacks the MA's target when the bot engages, and backs off on `/bots backoff`. Pet taunt is turned off, since the paladin tanks; a `PetTaunt` setting (saved by `/bots set`) turns it on for when a pet tanks.
+
+### Pet gear
+
+What a client sees of another spawn's gear is only its look: a weapon's model number in each hand and armor appearance, never item IDs, and nothing at all for rings, belts or masks. There's no pet inventory in the client. So the bot doesn't check what a pet wears; it remembers which pets it has geared, by spawn ID. A pet that dies and is summoned again has a new ID and gets geared again. The memory is lost on plugin reload, so after a reload every pet is geared once more; the extra items are harmless.
+
+- `[pet.weapon]`: weapon summons, best first. The best one the bot has is summoned twice, one for each hand, since almost every pet dual wields.
+- `[pet.gear]`: other gear summons (armor, mask, belt...), every entry the bot has, each once.
+- Giving: summon onto the cursor, target the pet, left-click it to open the give window, click Give. The give window holds 4 items, so a pet's gear can go over in a few gives.
+- Who: its own pet first, then each group member's pet, out of combat, not while moving or medding, and only pets in range.
+- Spells that summon a folded pack or bag of gear are left out for now; to come if your gear spells turn out to give one.
+
+### Pet buffs
+
+- `[buff.pet]`: buffs only for the bot's own pet (Burnout, the magician's pet aura...), kept up in a fight and between fights, when missing or under `RebuffAt` seconds left. The pet's buffs are already read from the pet window.
+
+### Damage
+
+- `[debuff]`: the malo line, *each kind*, the shaman's way (`DpsManaMin`, `DotStopAt`, `MaxResists`).
+- `[nuke]`: direct damage, once debuffs are on, above `NukeManaMin` mana.
+
 ## Milestones
 
 Monk:
 
 1. Burn phase, Mend, Feign Death (including feigning again when knocked out of it while FD still applies).
+
+Magician:
+
+0. Every mq-emu addition the magician needs, each tried in game with the test plugin and released before the bot work starts:
+   - Give the cursor item to a spawn: left-click it to open the give window, then click Give; and whether the give window is open.
+   - The pet window's command states (taunt on or off...), so the bot sets taunt instead of toggling it blind.
+   - Line of sight from you to a spawn, so a caster can tell before casting rather than from the cast failing.
+1. Magician module with memorizing, `[debuff]` and `[nuke]`, reusing the shaman's code; check it stays out of melee and keeps line of sight.
+2. Pet in core: `[pet]` summon out of combat, send the pet in on the MA's target, back off with `/bots backoff`, `PetTaunt` (off by default).
+3. Pet gear on its own pet: `[pet.weapon]` best summoned twice, `[pet.gear]` each once, geared pets remembered by spawn ID.
+4. Pet gear on group members' pets, in range, out of combat.
+5. `[buff.pet]` on its own pet.
