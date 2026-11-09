@@ -103,10 +103,6 @@ Monk:
 
 Magician:
 
-0. Every mq-emu addition the magician needs, each tried in game with the test plugin and released before the bot work starts:
-   - Give the cursor item to a spawn: left-click it to open the give window, then click Give; and whether the give window is open.
-   - The pet window's command states (taunt on or off...), so the bot sets taunt instead of toggling it blind.
-   - Line of sight from you to a spawn, so a caster can tell before casting rather than from the cast failing.
 1. Magician module with memorizing, `[debuff]` and `[nuke]`, reusing the shaman's code; check it stays out of melee and keeps line of sight.
 2. Pet in core: `[pet]` summon out of combat, send the pet in on the MA's target, back off with `/bots backoff`, `PetTaunt` (off by default).
 3. Pet gear on its own pet: `[pet.weapon]` best summoned twice, `[pet.gear]` each once, geared pets remembered by spawn ID.
