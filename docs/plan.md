@@ -67,7 +67,7 @@ Cannibalize, to come: the shaman's own way of trading health for mana (the Canni
 
 ## Magician
 
-Planned 2026-11-09. The module, memorizing, `[debuff]`, `[nuke]` and line of sight are done. A caster with a pet: it summons and gears its own pet, gears every group member's pet, buffs its own pet, malos and nukes. It follows the caster rules the shaman does: no melee, stay out of melee range, keep line of sight.
+Planned 2026-11-09. The module, memorizing, `[debuff]`, `[nuke]`, line of sight, facing the mob, and sitting in a fight only when out of mana for any damage spell are done. A caster with a pet: it summons and gears its own pet, gears every group member's pet, buffs its own pet, malos and nukes. It follows the caster rules the shaman does: no melee, stay out of melee range, keep line of sight.
 
 Pets are a shared part in core, not magician code, so any class with a pet (necro, beastlord, shaman later) gets summoning, sending the pet in, and pet buffs from the same archetypes.
 
@@ -103,7 +103,8 @@ Monk:
 
 Magician:
 
-1. Pet in core: `[pet]` summon out of combat, send the pet in on the MA's target, back off with `/bots backoff`, `PetTaunt` (off by default).
-2. Pet gear on its own pet: `[pet.weapon]` best summoned twice, `[pet.gear]` each once, geared pets remembered by spawn ID.
-3. Pet gear on group members' pets, in range, out of combat.
-4. `[buff.pet]` on its own pet.
+1. Pet attack in core: send the pet in on the MA's target, back off with `/bots backoff`, `PetTaunt` (off by default). Needs mq-emu's `pet_command` and `pet_target` (mq-rs b4b42c2, released once its selftest passes in game).
+2. `[pet]` summon out of combat.
+3. Pet gear on its own pet: `[pet.weapon]` best summoned twice, `[pet.gear]` each once, geared pets remembered by spawn ID.
+4. Pet gear on group members' pets, in range, out of combat.
+5. `[buff.pet]` on its own pet.

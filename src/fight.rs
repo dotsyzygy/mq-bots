@@ -25,6 +25,8 @@ const LANDED_HOLD: Duration = Duration::from_secs(6);
 /// A spell that didn't take hold on someone (a stronger one is on them) is
 /// taken as on them this long.
 const BLOCKED_HOLD: Duration = Duration::from_secs(60);
+/// A caster in a fight turns to face the mob when it's further off than this.
+const FACE_WITHIN_DEGREES: f32 = 5.0;
 const MOVEUTILS: &str = "MQ2MoveUtils";
 const ADVPATH: &str = "MQ2AdvPath";
 
@@ -105,7 +107,7 @@ impl Bots {
             Decision::Disengage => self.disengage(mq),
         }
         let idle = self.fight.last_action == acted && self.fight.task.is_none() && !leaving && !me.is_moving() && me.casting().is_none() && !me.is_feigning() && !me.is_stunned();
-        if me.is_standing() && sit(&self.state, idle, self.state.engaged.is_some(), self.melee()) {
+        if me.is_standing() && sit(&self.config, &self.state, idle, self.state.engaged.is_some(), self.melee(), mana_percent(mq).unwrap_or(0)) {
             mq.set_sitting(true);
             self.fight.sat = true;
         }
@@ -207,6 +209,16 @@ impl Bots {
         if self.fight.task.is_none() && mq.target().is_none_or(|target| target.id().0 != id) {
             let Some(target) = mq.spawn(SpawnId(id)) else { return };
             mq.set_target(Some(&target));
+        }
+        // A caster faces the mob: a bolt cast off to one side can miss it
+        // and hit something else.
+        if !self.melee()
+            && let Some(mob) = mq.spawn(SpawnId(id))
+        {
+            let toward = me.heading_to(&mob);
+            if me.heading().difference(toward) > FACE_WITHIN_DEGREES {
+                let _ = mq.face_now(toward);
+            }
         }
         if self.fight.next_action.is_some_and(|at| Instant::now() < at) {
             return;
