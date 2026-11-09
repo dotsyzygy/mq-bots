@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use crate::{Config, Mob, State};
 
+mod caster;
+mod magician;
 mod monk;
 mod shaman;
 
@@ -89,8 +91,9 @@ pub trait Game {
     /// pet, by spawn ID; `None` if it isn't on it. One whose buffs aren't
     /// seen has every one, so nothing is cast on it over and over.
     fn buff_left(&self, spawn: u32, spell: &str) -> Option<Duration>;
-    /// A member or pet close enough for a memorized spell, by the INI's
-    /// name, to reach (its range, or a group spell's AE range).
+    /// A spawn (member, pet or mob) close enough for a memorized spell, by
+    /// the INI's name, to reach (its range, or a group spell's AE range),
+    /// and in line of sight.
     fn in_range(&self, spell: &str, spawn: u32) -> bool;
     /// Your mana as a percent of your most.
     fn mana_percent(&self) -> i32;
@@ -140,6 +143,7 @@ pub fn for_class(name: &str) -> Option<Box<dyn Class>> {
     match name.to_ascii_lowercase().as_str() {
         "monk" => Some(Box::new(monk::Monk)),
         "shaman" => Some(Box::new(shaman::Shaman)),
+        "magician" => Some(Box::new(magician::Magician)),
         _ => None,
     }
 }
@@ -398,6 +402,7 @@ mod tests {
     fn finds_classes_by_name() {
         assert!(for_class("MONK").is_some_and(|monk| monk.melee()));
         assert!(for_class("Shaman").is_some_and(|shaman| !shaman.melee()));
+        assert!(for_class("Magician").is_some_and(|magician| !magician.melee()));
         assert!(for_class("Paladin").is_none());
     }
 

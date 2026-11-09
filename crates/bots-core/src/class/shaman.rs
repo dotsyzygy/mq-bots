@@ -2,8 +2,8 @@
 //! or out), keeps its debuffs and DoTs on the mob, nukes, and keeps its
 //! spells memorized.
 
-use super::{Action, Class, Game, Member, Spells, best_memorized, melee_class, memorized_each_kind};
-use crate::{Config, Mob, State};
+use super::{Action, Class, Game, Member, Spells, best_memorized, caster, melee_class};
+use crate::{Config, State};
 
 pub struct Shaman;
 
@@ -83,38 +83,8 @@ impl Class for Shaman {
         if let Some(buff) = melee_buff(config, game) {
             return Some(buff);
         }
-        let mob = game.mob()?;
-        let missing = missing_on_mob(config, game, &mob);
-        let castable = |spell: &&str| game.on_mob(spell) == Some(false) && game.spell_ready(spell) && game.in_range(spell, mob.id);
-        if let Some(spell) = missing.iter().copied().find(castable) {
-            return Some(Action::Cast { spell: spell.to_owned(), target: Some(mob.id) });
-        }
-        // Until the mob's buffs are seen, a debuff may be missing: it goes
-        // before a nuke.
-        if missing.iter().any(|spell| game.on_mob(spell).is_none()) {
-            return None;
-        }
-        nuke(config, game, &mob)
+        caster::damage(config, game, &["debuff", "dot"])
     }
-}
-
-/// The `debuff`, then `dot`, spells of each kind the shaman would put on the
-/// mob, that aren't seen on it from this shaman (or its buffs aren't seen
-/// yet): none unless mana is above `DpsManaMin` and the mob above
-/// `DotStopAt`, and none the mob resisted `MaxResists` times in a row.
-fn missing_on_mob<'a>(config: &'a Config, game: &dyn Game, mob: &Mob) -> Vec<&'a str> {
-    if game.mana_percent() <= i32::from(config.dps_mana_min) || mob.hp_percent <= i32::from(config.dot_stop_at) {
-        return Vec::new();
-    }
-    let spells = ["debuff", "dot"].into_iter().flat_map(|archetype| memorized_each_kind(config, archetype, game));
-    spells.filter(|spell| game.on_mob(spell) != Some(true) && game.resists(spell) < config.max_resists).collect()
-}
-
-/// The best `nuke`, with mana above `NukeManaMin`.
-fn nuke(config: &Config, game: &dyn Game, mob: &Mob) -> Option<Action> {
-    let nuke = best_memorized(config, "nuke", game)?;
-    let go = game.mana_percent() > i32::from(config.nuke_mana_min) && game.spell_ready(nuke) && game.in_range(nuke, mob.id);
-    go.then(|| Action::Cast { spell: nuke.to_owned(), target: Some(mob.id) })
 }
 
 /// `buff.melee` on the first melee-class member, the tank first, then on the
@@ -144,6 +114,7 @@ fn is_heal(config: &Config, spell: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Mob;
     use crate::class::FakeGame;
 
     #[test]

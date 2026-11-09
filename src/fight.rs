@@ -607,7 +607,8 @@ impl Game for Seeing<'_> {
         }
         let Some((_, spell)) = memorized(self.mq, spell) else { return false };
         let reach = if spell.range() > 0.0 { spell.range() } else { spell.ae_range() };
-        self.mq.spawn(SpawnId(spawn)).is_some_and(|spawn| reach <= 0.0 || self.me.distance_to(&spawn) <= reach)
+        // The game won't cast on a spawn it can't see.
+        self.mq.spawn(SpawnId(spawn)).is_some_and(|spawn| (reach <= 0.0 || self.me.distance_to(&spawn) <= reach) && self.mq.line_of_sight(&spawn))
     }
 
     fn mana_percent(&self) -> i32 {

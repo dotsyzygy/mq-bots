@@ -66,3 +66,28 @@ Example: `MQ2Bots_<server>_Shaman.ini`
 [nuke]
 1=Ice Strike
 ```
+
+## Magician
+
+Listed most important first, and memorized the shaman's way.
+
+| Archetype | What goes in it | Used yet? |
+|---|---|---|
+| `debuff` | The malo line, *each kind*, kept on the mob the shaman's way (`DpsManaMin`, `DotStopAt`, `MaxResists`) | Cast |
+| `nuke` | Direct damage, once debuffs are on, above `NukeManaMin` mana | Cast |
+| `pet` | Pet summons | Milestone 1 |
+| `pet.weapon` | Pet weapon summons | Milestone 2 |
+| `pet.gear` | Other pet gear summons | Milestone 2 |
+| `buff.pet` | Buffs for its own pet | Milestone 4 |
+
+Example: `MQ2Bots_<server>_Magician.ini`
+
+```ini
+[debuff]
+1=Malosini
+2=Malaise
+
+[nuke]
+1=Shock of Fiery Blades
+2=Bolt of Flame
+```
