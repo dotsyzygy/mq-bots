@@ -24,13 +24,16 @@ pub fn damage(config: &Config, game: &dyn Game, archetypes: &[&str]) -> Option<A
 
 /// The spells of each kind in `archetypes` the caster would put on the mob,
 /// that aren't seen on it from this caster (or its buffs aren't seen yet):
-/// none unless mana is above `DpsManaMin` and the mob above `DotStopAt`, and
-/// none the mob resisted `MaxResists` times in a row.
+/// none unless mana is above `DpsManaMin` and the mob above `DotStopAt`, no
+/// DoT on a mob that dies sooner than `DotMinFight`, and none the mob
+/// resisted `MaxResists` times in a row.
 fn missing_on_mob<'a>(config: &'a Config, game: &dyn Game, mob: &Mob, archetypes: &[&str]) -> Vec<&'a str> {
     if game.mana_percent() <= i32::from(config.dps_mana_min) || mob.hp_percent <= i32::from(config.dot_stop_at) {
         return Vec::new();
     }
-    let spells = archetypes.iter().flat_map(|archetype| memorized_each_kind(config, archetype, game));
+    let dies_soon = game.mob_dies_in().is_some_and(|left| left < config.dot_min_fight);
+    let worth = |archetype: &&&str| !(dies_soon && archetype.eq_ignore_ascii_case("dot"));
+    let spells = archetypes.iter().filter(worth).flat_map(|archetype| memorized_each_kind(config, archetype, game));
     spells.filter(|spell| game.on_mob(spell) != Some(true) && game.resists(spell) < config.max_resists).collect()
 }
 

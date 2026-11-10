@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use bots_core::{Action, Decision, Game, Member, Mob, Mode, Outcome, Pet, PetOrder, Resists, Seen, aura_named, decide, follow_target, medding, on_disengage, pet_order, plan_gems, same_name, sit};
+use bots_core::{Action, Decision, Game, KillTime, Member, Mob, Mode, Outcome, Pet, PetOrder, Resists, Seen, aura_named, decide, follow_target, medding, on_disengage, pet_order, plan_gems, same_name, sit};
 use mq_emu::{Cast, CastResult, CombatState, GroupRole, MemorizeResult, Mq, PetCommand, Spawn, SpawnId, Spell, SpellId, Task, TaskId, XTARGET_AUTO_HATER, XTargetStatus, green, yellow};
 use posse_core::{BuffEntry, flags};
 use posse_shm::now_ms;
@@ -79,6 +79,9 @@ pub struct Fight {
     last_failure: Option<(String, CastResult)>,
     /// Debuff and DoT resists in a row on the mob being fought.
     pub resists: Resists,
+    /// HP readings of the MA's target (or the mob being fought), for how
+    /// soon it dies.
+    kill_time: KillTime,
 }
 
 impl Bots {
@@ -107,6 +110,10 @@ impl Bots {
         let decision = decide(&mut self.state, &self.config, &Seen { ma_target, engaged });
         // The engaged mob with the MA's HP for it, when it's the MA's target.
         let fought = engaged.map(|engaged| ma_target.filter(|mob| mob.id == engaged.id).unwrap_or(engaged));
+        // The MA's target from before engaging, so the rate is known sooner.
+        if let Some(read) = fought.or(ma_target).filter(|mob| mob.is_npc) {
+            self.fight.kill_time.see(read.id, read.hp_percent, Instant::now());
+        }
         let busy = me.is_feigning() || me.casting().is_some() || self.fight.task.is_some();
         let decided_engage = matches!(decision, Decision::Engage(_));
         self.follow(mq, if decided_engage { None } else { follow_target(&self.state, ma.as_ref().map(|ma| ma.id().0), busy) });
@@ -686,6 +693,10 @@ impl Game for Seeing<'_> {
 
     fn mob(&self) -> Option<Mob> {
         self.mob
+    }
+
+    fn mob_dies_in(&self) -> Option<Duration> {
+        self.fight.kill_time.dies_in(self.mob?.id)
     }
 
     fn on_mob(&self, spell: &str) -> Option<bool> {

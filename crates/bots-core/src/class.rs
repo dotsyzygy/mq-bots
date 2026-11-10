@@ -99,6 +99,9 @@ pub trait Game {
     fn mana_percent(&self) -> i32;
     /// The mob being fought, its HP as the MA sees it when it can.
     fn mob(&self) -> Option<Mob>;
+    /// How soon the mob being fought dies at the rate its HP is going down;
+    /// `None` until that's known, or if it isn't going down.
+    fn mob_dies_in(&self) -> Option<Duration>;
     /// Whether the mob being fought has a spell, by the INI's name, from
     /// you; `None` while its buffs aren't seen (not targeted, or the
     /// server hasn't sent them yet).
@@ -303,6 +306,7 @@ pub(crate) struct FakeGame {
     pub out_of_range: Vec<u32>,
     pub mana_percent: i32,
     pub mob: Option<Mob>,
+    pub mob_dies_in: Option<Duration>,
     /// Spells from you on the mob; `None` while its buffs aren't seen.
     pub on_mob: Option<Vec<&'static str>>,
     /// Resists in a row on the mob.
@@ -367,6 +371,9 @@ impl Game for FakeGame {
     }
     fn mob(&self) -> Option<Mob> {
         self.mob
+    }
+    fn mob_dies_in(&self) -> Option<Duration> {
+        self.mob_dies_in
     }
     fn on_mob(&self, spell: &str) -> Option<bool> {
         self.on_mob.as_ref().map(|spells| spells.contains(&spell))

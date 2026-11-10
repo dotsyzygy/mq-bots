@@ -38,7 +38,7 @@ Listed most important first. The shaman keeps memorized what it uses of each, on
 | `heal.group.hot` | Group heal over time | Cast |
 | `buff.melee` | Short melee buffs (Spirit of the Panther), in a fight and between fights (not while moving), on melee-class members (the tank first), then their pets, when missing or under `RebuffAt` seconds left | Cast |
 | `debuff` | Slows, malos, cripples..., *each kind*, kept on the mob in list order, from `DpsManaMin` mana and above `DotStopAt` mob HP, until `MaxResists` resists in a row | Cast |
-| `dot` | DoTs, *each kind* (poison, disease), the same way | Cast |
+| `dot` | DoTs, *each kind* (poison, disease), the same way, but not on a mob that dies sooner than `DotMinFight` seconds at the rate it's losing HP | Cast |
 | `nuke` | Direct damage, once debuffs and DoTs are on, above `NukeManaMin` mana | Cast |
 
 `heal.group` (a direct group heal, no HoT) is a different archetype, for classes that have one; the shaman doesn't.

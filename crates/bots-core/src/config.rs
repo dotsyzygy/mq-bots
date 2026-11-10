@@ -52,6 +52,10 @@ pub struct Config {
     pub dps_mana_min: u8,
     /// Debuff and DoT only a mob above this HP% (`DotStopAt`).
     pub dot_stop_at: u8,
+    /// DoT only a mob that, at the rate its HP is going down, lives at least
+    /// this long, so the DoT pays off; 0 always DoTs (`DotMinFight`,
+    /// seconds).
+    pub dot_min_fight: Duration,
     /// Give up on a debuff or DoT a mob resists this many times in a row
     /// (`MaxResists`).
     pub max_resists: u8,
@@ -80,6 +84,7 @@ impl Default for Config {
             rebuff_at: Duration::from_secs(6),
             dps_mana_min: 40,
             dot_stop_at: 25,
+            dot_min_fight: Duration::from_secs(18),
             max_resists: 3,
             nuke_mana_min: 70,
             med_at: 80,
@@ -146,6 +151,7 @@ impl Config {
             "RebuffAt" => self.rebuff_at.as_secs().to_string(),
             "DpsManaMin" => self.dps_mana_min.to_string(),
             "DotStopAt" => self.dot_stop_at.to_string(),
+            "DotMinFight" => self.dot_min_fight.as_secs().to_string(),
             "MaxResists" => self.max_resists.to_string(),
             "NukeManaMin" => self.nuke_mana_min.to_string(),
             "MedAt" => self.med_at.to_string(),
@@ -173,6 +179,7 @@ impl Config {
             "rebuffat" => value.parse().ok().filter(|seconds| *seconds <= 600).map(|seconds| self.rebuff_at = Duration::from_secs(seconds)).ok_or("seconds from 0 to 600"),
             "dpsmanamin" => mana(&mut self.dps_mana_min),
             "dotstopat" => mana(&mut self.dot_stop_at),
+            "dotminfight" => value.parse().ok().filter(|seconds| *seconds <= 120).map(|seconds| self.dot_min_fight = Duration::from_secs(seconds)).ok_or("seconds from 0 to 120"),
             "maxresists" => value.parse().ok().filter(|count| (1..=10).contains(count)).map(|count| self.max_resists = count).ok_or("a count from 1 to 10"),
             "nukemanamin" => mana(&mut self.nuke_mana_min),
             "medat" => mana(&mut self.med_at),
@@ -185,7 +192,7 @@ impl Config {
 }
 
 /// The `[Settings]` keys, as the INI spells them.
-pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "HotAt", "RebuffAt", "DpsManaMin", "DotStopAt", "MaxResists", "NukeManaMin", "MedAt", "PetTaunt"];
+pub const SETTINGS: &[&str] = &["Mode", "Follow", "AssistAt", "CampRadius", "HealAt", "EmergencyAt", "GroupHotAt", "GroupHotCount", "HotAt", "RebuffAt", "DpsManaMin", "DotStopAt", "DotMinFight", "MaxResists", "NukeManaMin", "MedAt", "PetTaunt"];
 
 fn canonical(key: &str) -> Option<&'static str> {
     SETTINGS.iter().copied().find(|name| name.eq_ignore_ascii_case(key))
@@ -301,7 +308,7 @@ mod tests {
             "Monk.ini: [Settings] Follow=maybe: on or off",
             "Monk.ini: [Settings] AssistAt=0: a percent from 1 to 100",
             "Monk.ini: [Settings] CampRadius=-5: a distance above 0",
-            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, HotAt, RebuffAt, DpsManaMin, DotStopAt, MaxResists, NukeManaMin, MedAt, PetTaunt",
+            "Monk.ini: [Settings] Speed isn't a setting: Mode, Follow, AssistAt, CampRadius, HealAt, EmergencyAt, GroupHotAt, GroupHotCount, HotAt, RebuffAt, DpsManaMin, DotStopAt, DotMinFight, MaxResists, NukeManaMin, MedAt, PetTaunt",
             "Monk.ini: [ability.offense] first=Flying Kick: entries are numbered 1=, 2=..., best first",
         ]);
         let defaults = Config::default();

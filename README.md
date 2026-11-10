@@ -72,6 +72,10 @@ RebuffAt=6
 ; NukeManaMin% (default 70)
 DpsManaMin=40
 DotStopAt=25
+; Casters: no DoT on a mob that, at the rate its HP went down over the last
+; few seconds, dies in under DotMinFight seconds (default 18, three ticks;
+; 0 always DoTs); it's nuked instead. Debuffs still go on.
+DotMinFight=18
 MaxResists=3
 NukeManaMin=70
 ; Anyone with mana: below MedAt% mana (default 80; 0 never), sit to med until

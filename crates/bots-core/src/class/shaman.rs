@@ -118,6 +118,7 @@ mod tests {
     use super::*;
     use crate::Mob;
     use crate::class::FakeGame;
+    use std::time::Duration;
 
     #[test]
     fn keeps_memorized_every_archetype_it_reads() {
@@ -378,6 +379,21 @@ mod tests {
         assert_eq!(fight(&game), cast(FROST, Some(MOB)), "then a nuke");
         game.member_buffs.clear();
         assert_eq!(fight(&game), cast(PANTHER, Some(TANK)), "melee buffs come before");
+    }
+
+    #[test]
+    fn no_dot_on_a_mob_dying_too_soon_for_it() {
+        let mut game = fighting();
+        game.on_mob = Some(vec![TOGOR, MALOSI]);
+        game.mob_dies_in = Some(Duration::from_secs(10));
+        assert_eq!(fight(&game), cast(FROST, Some(MOB)), "a nuke instead");
+        game.on_mob = Some(vec![]);
+        assert_eq!(fight(&game), cast(TOGOR, Some(MOB)), "debuffs still go on");
+        game.on_mob = Some(vec![TOGOR, MALOSI]);
+        game.mob_dies_in = Some(Duration::from_secs(30));
+        assert_eq!(fight(&game), cast(BREATH, Some(MOB)), "lives long enough");
+        game.mob_dies_in = None;
+        assert_eq!(fight(&game), cast(BREATH, Some(MOB)), "not known yet");
     }
 
     #[test]
