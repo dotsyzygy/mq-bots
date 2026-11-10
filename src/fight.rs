@@ -30,14 +30,14 @@ const BLOCKED_HOLD: Duration = Duration::from_secs(60);
 const PET_ORDER_GAP: Duration = Duration::from_secs(2);
 /// A caster in a fight turns to face the mob when it's further off than this.
 const FACE_WITHIN_DEGREES: f32 = 5.0;
-/// How far into the game's melee range a melee bot sticks, in percent. The
-/// game's range adds the height difference between the two spawns, so a tall
-/// mob gets more than the server lets you hit from ("Your target is too far
-/// away"); half of it is in reach for the server too.
-const STICK_PERCENT: f32 = 50.0;
-/// Abilities wait until the bot is this far into the game's melee range, in
-/// percent: where it sticks, with some slack for the stick wobbling.
-const REACH_PERCENT: f32 = 60.0;
+/// How far from the mob a melee bot sticks. The game's melee range grows with
+/// the mob's size and the height difference, past what the server lets you
+/// hit from on big mobs ("Your target is too far away"), even halved; this is
+/// in reach on any mob.
+const STICK_DISTANCE: f32 = 15.0;
+/// Abilities wait until the bot is this close: where it sticks, with some
+/// slack for the stick wobbling.
+const REACH: f32 = 17.0;
 const MOVEUTILS: &str = "MQ2MoveUtils";
 const ADVPATH: &str = "MQ2AdvPath";
 
@@ -63,6 +63,9 @@ pub struct Fight {
     pub task: Option<TaskId>,
     /// The spell, by the INI's name, of the bot's cast while it runs.
     task_spell: Option<String>,
+    /// The spawn the bot's cast is on while it runs; `None` for a cast on
+    /// the group or yourself.
+    task_target: Option<u32>,
     /// Spells that landed lately, by the INI's name, on a spawn (or the
     /// group, for `None`), and when.
     landed: Vec<(String, Option<u32>, Instant)>,
@@ -97,6 +100,7 @@ impl Bots {
             self.follow(mq, None);
             return;
         }
+        self.stop_on_lost_target(mq);
         self.state.medding = medding(&self.config, self.state.medding, mana_percent(mq));
         let ma = main_assist(mq).filter(|ma| ma.id() != me.id());
         let ma_target = ma.as_ref().and_then(|ma| {
@@ -168,7 +172,7 @@ impl Bots {
             return;
         }
         if mq.is_plugin_loaded(MOVEUTILS) {
-            mq.command(&format!("/stick behind {STICK_PERCENT}%"));
+            mq.command(&format!("/stick behind {STICK_DISTANCE}"));
         } else if !std::mem::replace(&mut self.fight.warned_stick, true) {
             mq.chat(yellow!("[Bots] load {MOVEUTILS} to stick to mobs"));
         }
@@ -411,6 +415,7 @@ impl Bots {
         }
         let name = name.to_owned();
         self.fight.task_spell = Some(name.clone());
+        self.fight.task_target = target;
         self.fight.task = Some(mq.spawn_task(move |task: Task<Bots>| async move {
             let result = task.cast(cast).await;
             task.with_plugin(|bots, mq| bots.cast_ended(mq, &name, target, result));
@@ -421,6 +426,7 @@ impl Bots {
     fn cast_ended(&mut self, mq: &Mq<Self>, name: &str, target: Option<u32>, result: CastResult) {
         self.fight.task = None;
         self.fight.task_spell = None;
+        self.fight.task_target = None;
         self.fight.landed.retain(|(_, _, at)| at.elapsed() < LANDED_HOLD);
         self.fight.blocked.retain(|(_, _, at)| at.elapsed() < BLOCKED_HOLD);
         // A resisted debuff isn't on the mob: it's cast again when ready.
@@ -492,9 +498,23 @@ impl Bots {
     /// Stops the bot's cast or memorizing, for a character leaving.
     pub fn stop_task(&mut self, mq: &Mq<Self>) {
         self.fight.task_spell = None;
+        self.fight.task_target = None;
         if let Some(task) = self.fight.task.take() {
             mq.cancel_task(task);
         }
+    }
+
+    /// Stops the bot's cast on a spawn that has died or left the zone; one
+    /// on the group or yourself goes on.
+    fn stop_on_lost_target(&mut self, mq: &Mq<Self>) {
+        let Some(id) = self.fight.task_target else { return };
+        if mq.spawn(SpawnId(id)).is_some_and(|spawn| !spawn.is_corpse()) {
+            return;
+        }
+        if let Some(spell) = &self.fight.task_spell {
+            mq.chat(yellow!("[Bots] stopping {spell}: its target is gone"));
+        }
+        self.stop_task(mq);
     }
 
     pub fn disengage(&mut self, mq: &Mq<Self>) {
@@ -625,7 +645,7 @@ impl Game for Seeing<'_> {
     }
 
     fn in_melee_range(&self) -> bool {
-        self.mq.target().is_some_and(|target| self.me.distance_to(&target) <= self.mq.melee_range(self.me, &target) * REACH_PERCENT / 100.0)
+        self.mq.target().is_some_and(|target| self.me.distance_to(&target) <= REACH)
     }
 
     fn spell_known(&self, name: &str) -> bool {
