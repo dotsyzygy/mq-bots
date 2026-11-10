@@ -39,6 +39,7 @@ Engaging is automatic off the MA, with commands that override it.
 - **Regular vs burn:** `/bots burn` starts a burn phase: `disc.burn` and `aa.burn` are used in priority order. The burn lasts until the current combat is over (no group member is attacking and the extended target list has no haters) and then turns itself off; `/bots burn off` ends it early. Auto-burn conditions (named mob, target count) come later.
 - **Camp:** for now the camp is wherever the MA is. Later, `deploy` and `packup` commands set and clear a static spot to camp at, and the camp radius is measured from there while deployed.
 - **Feigning:** while feigned, a bot does nothing else. It still checks that it's feigning whenever FD still applies (aggro, low HP), and feigns again if something knocked it out, since AoE spells and the like sometimes do.
+- **Looting and merchants:** while the loot or merchant window is open, a bot does nothing else: it stops following and doesn't target, cast, engage or sit until the window closes. A cast already under way is left to finish.
 - **Out of combat:** follow the Main Assist (MQ2AdvPath `/afollow`), with an on/off switch. Following stops while engaged, casting, memorizing or feigning, and in mode off.
 
 Modes `tank` and `puller` come later.

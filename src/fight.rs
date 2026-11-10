@@ -88,6 +88,12 @@ impl Bots {
         }
         self.fight.looked = Some(Instant::now());
         let Some(me) = mq.me() else { return };
+        // Looting or at a merchant: nothing else until the window closes, so
+        // no following off, retargeting, casting or sitting under it.
+        if mq.loot_window().is_some() || mq.merchant().is_some() {
+            self.follow(mq, None);
+            return;
+        }
         self.state.medding = medding(&self.config, self.state.medding, mana_percent(mq));
         let ma = main_assist(mq).filter(|ma| ma.id() != me.id());
         let ma_target = ma.as_ref().and_then(|ma| {
